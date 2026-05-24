@@ -49,12 +49,27 @@ class RiskAgent:
         per_position = (self.capital * kelly_pct) / self.MAX_POSITIONS
         return round(per_position, 2)
 
-    def position_size(self, funding_rate: float = 0.002) -> float:
-        """Returns USDC size per leg (spot = this, perp = this)."""
-        size = self.kelly_size(funding_rate)
-        return max(size, 5.0) if size > 0 else 0
+    def _kelly_drawdown_factor(self) -> float:
+        """
+        Automatically reduce position size during a drawdown.
+        Full Kelly above -$1, 75% at half the daily limit, 50% near the limit.
+        Protects capital from a bad streak without stopping trading entirely.
+        """
+        half_limit = self.MAX_DAILY_LOSS / 2   # e.g. -$2.50
+        if self.daily_pnl >= -1.0:
+            return 1.00
+        elif self.daily_pnl >= half_limit:
+            return 0.75
+        else:
+            return 0.50
 
-    def can_enter(self, rate, spread, predicted, n_open=0, verbose=True) -> bool:
+    def position_size(self, funding_rate: float = 0.002) -> float:
+        """Returns USDC size per leg, scaled by Kelly × drawdown factor."""
+        raw_size = self.kelly_size(funding_rate)
+        scaled   = raw_size * self._kelly_drawdown_factor()
+        return max(scaled, 5.0) if scaled > 0 else 0
+
+    def can_enter(self, rate, spread, predicted, n_open=0, verbose=True, trend="stable") -> bool:
         checks = {
             "Trading enabled":     self.trading_on,
             "Daily loss OK":       self.daily_pnl > self.MAX_DAILY_LOSS,
@@ -62,6 +77,7 @@ class RiskAgent:
             "Spread tight enough": spread <= self.MAX_SPREAD,
             "Next rate positive":  predicted >= self.MIN_PREDICTED,
             "Position slots open": n_open < self.MAX_POSITIONS,
+            "Rate not falling":    trend != "falling",
         }
         if verbose:
             for k, v in checks.items():
@@ -70,13 +86,18 @@ class RiskAgent:
 
     def should_exit(self, pos: dict, rate_now: float) -> tuple:
         """
-        Returns (exit: bool, reason: str).
+        Dynamic trailing exit threshold = 33% of entry rate (min 0.03%/hr).
 
-        Exit rules (in priority order):
-          1. Rate gone negative  → exit immediately (we're actively losing funding)
-          2. Rate < 0.05% AND fees already covered → rate too low, take the profit
-          3. Rate < 0.05% AND held >= MIN_HOLD_HRS → held long enough; cut and move on
-          4. Otherwise           → hold
+        Examples:
+          Entry 0.50%/hr → exit threshold 0.165%/hr  (holds high-rate positions longer)
+          Entry 0.20%/hr → exit threshold 0.066%/hr
+          Entry 0.15%/hr → exit threshold 0.050%/hr
+
+        Exit rules (priority order):
+          1. Rate negative  → exit immediately
+          2. Rate < threshold AND fees covered  → take the profit
+          3. Rate < threshold AND min hold elapsed  → cut and move on
+          4. Otherwise → hold
         """
         held_hrs   = (time.time() - pos["entry_time"]) / 3600
         notional   = pos["size_usd"] * 2
@@ -84,13 +105,18 @@ class RiskAgent:
         gross_earn = notional * pos.get("rate", 0) * held_hrs
         fees_covered = gross_earn >= fees_cost
 
+        # Dynamic threshold: trail at 33% of entry rate, floor at 0.03%/hr
+        exit_threshold = max(pos.get("rate", self.MIN_RATE) * 0.33, 0.0003)
+
         if rate_now < 0:
             return True, f"Rate went negative ({rate_now*100:.4f}%)"
-        if rate_now < 0.0005 and fees_covered:
+        if rate_now < exit_threshold and fees_covered:
             net = gross_earn - fees_cost
-            return True, f"Rate low ({rate_now*100:.4f}%), fees covered (net +${net:.4f})"
-        if rate_now < 0.0005 and held_hrs >= self.MIN_HOLD_HRS:
-            return True, f"Rate low ({rate_now*100:.4f}%), min hold elapsed ({held_hrs:.1f}hr)"
+            return True, (f"Rate below trail ({rate_now*100:.4f}% < "
+                          f"{exit_threshold*100:.4f}%), net +${net:.4f}")
+        if rate_now < exit_threshold and held_hrs >= self.MIN_HOLD_HRS:
+            return True, (f"Rate below trail ({rate_now*100:.4f}% < "
+                          f"{exit_threshold*100:.4f}%), min hold elapsed")
         return False, ""
 
     def record_trade(self, pnl: float, rate: float):

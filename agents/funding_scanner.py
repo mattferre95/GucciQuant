@@ -3,7 +3,7 @@ GUCCI QUANT — Funding Rate Scanner + Timing Awareness
 Hyperliquid pays funding at :00 every hour.
 Optimal entry window: :45-:59 (first payment within 15 min).
 """
-import requests
+import requests, time as _time
 from datetime import datetime
 
 BASE_URL   = "https://api.hyperliquid.xyz/info"
@@ -31,10 +31,62 @@ def _get_tradeable_assets() -> set:
     return _tradeable_cache
 
 
+def get_rate_trend(asset: str) -> str:
+    """
+    Fetch last 4 hourly funding rates and return trend direction.
+    Returns 'rising', 'stable', or 'falling'.
+    Avoids entering into collapsing rate environments — the biggest cause
+    of fee-negative trades.
+    """
+    try:
+        start_ms = int((_time.time() - 5 * 3600) * 1000)
+        res = requests.post(BASE_URL, json={
+            "type": "fundingHistory", "coin": asset, "startTime": start_ms
+        }, timeout=6)
+        history = res.json()
+        if not isinstance(history, list) or len(history) < 3:
+            return "stable"
+        rates = [float(h["fundingRate"]) for h in history[-4:]]
+        mid        = len(rates) // 2
+        early_avg  = sum(rates[:mid]) / mid
+        late_avg   = sum(rates[mid:]) / (len(rates) - mid)
+        change_pct = (late_avg - early_avg) / max(abs(early_avg), 1e-9) * 100
+        if change_pct > 15:
+            return "rising"
+        elif change_pct < -15:
+            return "falling"
+        return "stable"
+    except Exception:
+        return "stable"
+
+
+def get_all_rates() -> list:
+    """
+    Return current funding rates for ALL tradeable assets (even below threshold).
+    Used by the dashboard to plot 24hr rate history per asset.
+    """
+    tradeable = _get_tradeable_assets()
+    try:
+        res = requests.post(BASE_URL, json={"type": "metaAndAssetCtxs"}, timeout=6)
+        meta, ctxs = res.json()
+        return [
+            {
+                "asset":      meta["universe"][i]["name"],
+                "rate_pct":   round(float(ctx.get("funding", 0)) * 100, 6),
+                "annual_pct": round(float(ctx.get("funding", 0)) * 24 * 365 * 100, 2),
+            }
+            for i, ctx in enumerate(ctxs)
+            if meta["universe"][i]["name"] in tradeable
+        ]
+    except Exception:
+        return []
+
+
 def get_opportunities() -> list:
     """
     Return tradeable assets with profitable funding rates, sorted desc.
     Only includes assets with BOTH spot + perp markets on Hyperliquid.
+    Includes rate trend so the risk agent can skip falling-rate entries.
     """
     tradeable = _get_tradeable_assets()
     res = requests.post(BASE_URL, json={"type": "metaAndAssetCtxs"}, timeout=6)
@@ -48,11 +100,13 @@ def get_opportunities() -> list:
         vol   = float(ctx.get("dayNtlVlm", 0))
         price = float(ctx.get("markPx", 0))
         if rate > MIN_RATE and vol > MIN_VOLUME:
+            trend = get_rate_trend(asset)
             opps.append({
                 "asset": asset, "rate": rate,
-                "rate_pct": rate * 100,
-                "annual_pct": rate * 24 * 365 * 100,
-                "volume": vol, "price": price
+                "rate_pct":    rate * 100,
+                "annual_pct":  rate * 24 * 365 * 100,
+                "volume": vol, "price": price,
+                "trend": trend,
             })
     return sorted(opps, key=lambda x: x["rate"], reverse=True)
 

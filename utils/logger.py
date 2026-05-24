@@ -11,6 +11,13 @@ DB_PATH = os.getenv("DB_PATH", "data/gucci_quant.db")
 os.makedirs("data", exist_ok=True)
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS rate_snapshot (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp  TEXT,
+    asset      TEXT,
+    rate_pct   REAL,
+    annual_pct REAL
+);
 CREATE TABLE IF NOT EXISTS scan_log (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp    TEXT,
@@ -79,6 +86,19 @@ def init_db():
         if "spot_id" not in cols:
             c.execute("ALTER TABLE positions ADD COLUMN spot_id TEXT")
     print(f"  🗄️  DB ready: {DB_PATH}")
+
+
+def log_rate_snapshot(rates: list):
+    """Store current rates for all tradeable assets — powers the 24hr rate chart."""
+    ts = datetime.utcnow().isoformat()
+    with get_conn() as c:
+        c.executemany(
+            "INSERT INTO rate_snapshot (timestamp, asset, rate_pct, annual_pct) VALUES (?,?,?,?)",
+            [(ts, r["asset"], r["rate_pct"], r["annual_pct"]) for r in rates]
+        )
+    # Keep only last 48hr to prevent unbounded growth
+    with get_conn() as c:
+        c.execute("DELETE FROM rate_snapshot WHERE timestamp < datetime('now', '-48 hours')")
 
 
 def log_scan(efficiency, mins_to_fund, top_asset, top_rate_pct,

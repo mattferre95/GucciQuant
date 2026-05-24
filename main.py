@@ -24,7 +24,8 @@ from dotenv import load_dotenv
 
 from agents.funding_scanner       import (get_opportunities, get_predicted,
                                            check_spread, minutes_to_funding,
-                                           is_optimal_entry_window, entry_efficiency_pct)
+                                           is_optimal_entry_window, entry_efficiency_pct,
+                                           get_all_rates)
 from agents.risk_agent            import RiskAgent
 from agents.notifier              import (alert_startup, alert_entry, alert_exit,
                                            alert_error, alert_daily_summary,
@@ -33,7 +34,7 @@ from execution.hyperliquid_trader import enter_position, exit_position
 from utils.logger                 import (init_db, log_trade, log_signal,
                                            save_open_position, close_saved_position,
                                            load_open_positions, get_daily_pnl,
-                                           get_total_trades, log_scan)
+                                           get_total_trades, log_scan, log_rate_snapshot)
 from utils.validator              import run_preflight
 from utils.performance            import print_report
 
@@ -107,6 +108,36 @@ def close_all(reason="Manual"):
     active_positions.clear()
 
 
+def check_liquidation_risk():
+    """
+    Live mode only: alert + close any perp position within 20% of liquidation.
+    Delta-neutral positions have very wide liquidation buffers (no leverage),
+    but it's safety-critical to monitor in live mode.
+    """
+    if os.getenv("PAPER_MODE", "true").lower() == "true":
+        return
+    try:
+        from execution.hyperliquid_trader import _get_clients
+        info, _, address = _get_clients()
+        state = info.user_state(address)
+        for item in state.get("assetPositions", []):
+            pos = item.get("position", {})
+            liq_px  = float(pos.get("liquidationPx") or 0)
+            mark_px = float(pos.get("entryPx") or 0)
+            asset   = pos.get("coin", "")
+            szi     = float(pos.get("szi", 0))
+            if liq_px > 0 and mark_px > 0 and szi != 0:
+                distance = abs(mark_px - liq_px) / mark_px
+                if distance < 0.20:
+                    msg = (f"{asset}: liq ${liq_px:.4f}, mark ${mark_px:.4f} "
+                           f"— only {distance*100:.1f}% away!")
+                    alert_risk_breach(f"LIQUIDATION RISK — {msg}")
+                    print(f"  🚨 LIQUIDATION RISK: {msg}")
+                    # Force close if within 10%
+                    if distance < 0.10 and asset in active_positions:
+                        close_all(f"Liquidation protection — {asset} {distance*100:.1f}% from liq")
+
+
 def scan_and_trade():
     global active_positions
     maybe_reset_daily()
@@ -169,12 +200,13 @@ def scan_and_trade():
             continue
 
         rate      = opp["rate"]
+        trend     = opp.get("trend", "stable")
         predicted = get_predicted(asset)
         spread    = check_spread(asset)
         log_signal(asset, rate, predicted, spread, "SCAN")
 
         if not risk.can_enter(rate, spread, predicted, n_open,
-                              verbose=(n_open == 0)):
+                              verbose=(n_open == 0), trend=trend):
             continue
 
         # Timing: enforce optimal window for moderate rates
@@ -208,6 +240,15 @@ def scan_and_trade():
     if not active_positions:
         top = [(k, f"{v['rate']*100:.3f}%") for k, v in list(opps_map.items())[:3]]
         print(f"  ⏳ No qualifying entries | Top rates: {top}")
+
+    # ── Snapshot all current rates (powers 24hr rate chart in dashboard) ──
+    try:
+        log_rate_snapshot(get_all_rates())
+    except Exception:
+        pass
+
+    # ── Liquidation safety check (live mode only) ──
+    check_liquidation_risk()
 
     # ── Log this scan cycle to DB for dashboard activity feed ──
     top_opp    = max(opps_map.values(), key=lambda o: o["rate"], default=None)
