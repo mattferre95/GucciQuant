@@ -4,7 +4,7 @@ Runs alongside the bot in a separate screen session.
 Access: http://YOUR_VPS_IP:8080
 """
 from flask import Flask, jsonify, render_template_string
-import sqlite3, os, math
+import sqlite3, os, math, sys
 from datetime import datetime, date
 from collections import defaultdict
 from dotenv import load_dotenv
@@ -125,6 +125,17 @@ def stats():
         rate_series[r["asset"]]["labels"].append(ts)
         rate_series[r["asset"]]["data"].append(r["rate_pct"])
 
+    # ── Annualised return from performance module ──
+    annual_return_pct = 0.0
+    try:
+        if "/root/GucciQuant" not in sys.path:
+            sys.path.insert(0, "/root/GucciQuant")
+        from utils.performance import get_metrics
+        m = get_metrics(capital)
+        annual_return_pct = m.get("annual_return_pct", 0.0)
+    except Exception:
+        pass
+
     # ── Scan log ──
     scans = query("SELECT * FROM scan_log ORDER BY timestamp DESC LIMIT 96")
 
@@ -146,6 +157,7 @@ def stats():
         "chart_labels":     chart_labels,
         "chart_data":       chart_data,
         "rate_series":      dict(rate_series),
+        "annual_return_pct": annual_return_pct,
         "mode":             os.getenv("PAPER_MODE", "true").lower(),
         "last_updated":     now.strftime("%H:%M:%S UTC"),
     })
@@ -188,7 +200,7 @@ HTML = """<!DOCTYPE html>
   .gap { margin-bottom: 14px; }
 
   /* Cards */
-  .metrics { display: grid; grid-template-columns: repeat(7,1fr); gap: 12px; margin-bottom: 14px; }
+  .metrics { display: grid; grid-template-columns: repeat(8,1fr); gap: 12px; margin-bottom: 14px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
   .card-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 8px; }
   .card-val { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1; }
@@ -223,7 +235,7 @@ HTML = """<!DOCTYPE html>
 
   .scroll-table { max-height: 300px; overflow-y: auto; }
 
-  @media (max-width:1100px) { .metrics{grid-template-columns:repeat(4,1fr)} }
+  @media (max-width:1200px) { .metrics{grid-template-columns:repeat(4,1fr)} }
   @media (max-width:768px)  { .metrics{grid-template-columns:repeat(2,1fr)} .two-col,.two-col-eq{grid-template-columns:1fr} }
 </style>
 </head>
@@ -260,6 +272,11 @@ HTML = """<!DOCTYPE html>
       <div class="card-label">Win Rate</div>
       <div class="card-val" id="winrate">—</div>
       <div class="card-sub" id="tradect">—</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Annual Return</div>
+      <div class="card-val green" id="annual">—</div>
+      <div class="card-sub">extrapolated</div>
     </div>
     <div class="card">
       <div class="card-label">Sharpe Ratio</div>
@@ -367,6 +384,10 @@ async function load() {
     wr.textContent = d.win_rate + '%';
     wr.className = 'card-val ' + (d.win_rate >= 50 ? 'green' : 'red');
     $('tradect').textContent = d.total_trades + ' completed';
+
+    const ar = $('annual');
+    ar.textContent = (d.annual_return_pct || 0).toFixed(1) + '%';
+    ar.className = 'card-val ' + ((d.annual_return_pct||0) > 20 ? 'green' : (d.annual_return_pct||0) > 0 ? 'yellow' : 'red');
 
     const sh = $('sharpe');
     sh.textContent = d.sharpe || '—';

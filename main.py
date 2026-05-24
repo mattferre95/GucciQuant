@@ -29,7 +29,8 @@ from agents.funding_scanner       import (get_opportunities, get_predicted,
 from agents.risk_agent            import RiskAgent
 from agents.notifier              import (alert_startup, alert_entry, alert_exit,
                                            alert_error, alert_daily_summary,
-                                           alert_risk_breach, start_command_listener)
+                                           alert_risk_breach, start_command_listener,
+                                           alert_rate_spike, alert_weekly_report)
 from execution.hyperliquid_trader import enter_position, exit_position
 from utils.logger                 import (init_db, log_trade, log_signal,
                                            save_open_position, close_saved_position,
@@ -40,9 +41,12 @@ from utils.performance            import print_report
 
 load_dotenv()
 
-risk             = RiskAgent()
-active_positions = {}
-_last_reset      = date.today()
+risk                  = RiskAgent()
+active_positions      = {}
+_last_reset           = date.today()
+_exit_times: dict     = {}          # {asset: unix_timestamp} — re-entry cooldown
+REENTRY_COOLDOWN_SECS = 1800        # 30 min cooldown after exit
+SPIKE_RATE_THRESHOLD  = 0.003       # 0.30%/hr — alert even when already positioned
 
 
 def recover_positions():
@@ -102,6 +106,7 @@ def close_all(reason="Manual"):
             risk.record_trade(net, pos.get("rate", 0))
             log_trade(pos, net)
             close_saved_position(asset)
+            _exit_times[asset] = time.time()
             alert_exit(asset, net, reason, pos.get("paper", True))
         except Exception as e:
             alert_error(f"Close failed for {asset}: {e}")
@@ -177,6 +182,7 @@ def scan_and_trade():
                 risk.record_trade(net, pos.get("rate", 0))
                 log_trade(pos, net)
                 close_saved_position(asset)
+                _exit_times[asset] = time.time()
                 alert_exit(asset, net, exit_reason, pos.get("paper", True))
                 del active_positions[asset]
             except Exception as e:
@@ -197,6 +203,13 @@ def scan_and_trade():
             break
         asset = opp["asset"]
         if asset in active_positions:
+            continue
+
+        # Re-entry cooldown: skip for 30 min after exit (prevents fee-burning oscillation)
+        secs_since_exit = time.time() - _exit_times.get(asset, 0)
+        if secs_since_exit < REENTRY_COOLDOWN_SECS:
+            mins_left = int((REENTRY_COOLDOWN_SECS - secs_since_exit) / 60)
+            print(f"  🕐 {asset}: cooldown {mins_left} min remaining")
             continue
 
         rate      = opp["rate"]
@@ -241,6 +254,12 @@ def scan_and_trade():
         top = [(k, f"{v['rate']*100:.3f}%") for k, v in list(opps_map.items())[:3]]
         print(f"  ⏳ No qualifying entries | Top rates: {top}")
 
+    # ── Rate spike alert (even when already fully positioned) ──
+    for opp in opps_map.values():
+        if opp["rate"] >= SPIKE_RATE_THRESHOLD:
+            alert_rate_spike(opp["asset"], opp["rate"] * 100, opp["annual_pct"])
+            break  # one alert per scan max
+
     # ── Snapshot all current rates (powers 24hr rate chart in dashboard) ──
     try:
         log_rate_snapshot(get_all_rates())
@@ -268,8 +287,48 @@ def scan_and_trade():
         pass
 
 
+def fast_exit_check():
+    """
+    Runs every 5 min — only processes exits, no entries.
+    Catches rate collapses between the 15-min full scans.
+    Uses get_all_rates() (no trend API call) for speed.
+    """
+    if not active_positions:
+        return
+    try:
+        rates_now = {r["asset"]: r["rate_pct"] / 100 for r in get_all_rates()}
+        for asset, pos in list(active_positions.items()):
+            rate_now = rates_now.get(asset, 0)
+            do_exit, reason = risk.should_exit(pos, rate_now)
+            if do_exit:
+                print(f"  ⚡ [FAST EXIT] {asset}: {reason}")
+                try:
+                    gross, fees = exit_position(pos)
+                    net = gross - fees
+                    risk.record_trade(net, pos.get("rate", 0))
+                    log_trade(pos, net)
+                    close_saved_position(asset)
+                    _exit_times[asset] = time.time()
+                    alert_exit(asset, net, reason, pos.get("paper", True))
+                    del active_positions[asset]
+                except Exception as e:
+                    alert_error(f"Fast exit failed for {asset}: {e}")
+    except Exception:
+        pass
+
+
+def send_weekly_report():
+    """Every Monday 09:00 UTC — performance summary to Discord."""
+    from utils.performance import get_metrics
+    m = get_metrics(risk.capital)
+    alert_weekly_report(m, risk.capital)
+    print_report(risk.capital)
+
+
 # Schedule
 schedule.every(15).minutes.do(scan_and_trade)
+schedule.every(5).minutes.do(fast_exit_check)
+schedule.every().monday.at("09:00").do(send_weekly_report)
 schedule.every().day.at("00:01").do(maybe_reset_daily)
 
 

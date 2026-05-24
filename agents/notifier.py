@@ -59,6 +59,23 @@ def alert_exit(asset, net_pnl, reason, paper=True):
     _send(f"{e} **EXIT** {'📄' if paper else '💰'}\n"
           f"Asset: `{asset}`\nNet: `{net_pnl:+.4f} USDC`\nReason: {reason}")
 
+def alert_rate_spike(asset, rate_pct, annual_pct):
+    _send(f"🚀 **RATE SPIKE** — `{asset}`\n"
+          f"Rate: `{rate_pct:.3f}%/hr` ({annual_pct:.1f}%/yr)\n"
+          f"Exceptional opportunity — bot is sizing up automatically.")
+
+def alert_weekly_report(metrics: dict, capital: float):
+    if not metrics.get("total_trades"):
+        return
+    _send(f"📊 **WEEKLY PERFORMANCE REPORT**\n"
+          f"Capital: `${capital:.2f}`\n"
+          f"Total PnL: `{metrics['total_pnl']:+.4f} USDC`\n"
+          f"Win Rate: `{metrics['win_rate_pct']:.1f}%`\n"
+          f"Sharpe: `{metrics['sharpe_ratio']}`\n"
+          f"Max Drawdown: `${metrics['max_drawdown']:.4f}`\n"
+          f"Annualised Return: `{metrics['annual_return_pct']:.1f}%`\n"
+          f"Avg Hold: `{metrics['avg_hold_hrs']:.1f}hr`")
+
 def alert_daily_summary(capital, daily_pnl, n_trades, best_rate):
     e = "📈" if daily_pnl >= 0 else "📉"
     _send(f"{e} **DAILY SUMMARY**\n"

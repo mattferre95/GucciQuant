@@ -49,6 +49,22 @@ class RiskAgent:
         per_position = (self.capital * kelly_pct) / self.MAX_POSITIONS
         return round(per_position, 2)
 
+    def _rate_tier_multiplier(self, funding_rate: float) -> float:
+        """
+        Size up when rates are unusually high — rare events, high confidence.
+        Normal Kelly is calibrated for the 0.15-0.20% baseline range.
+        At 0.50%+/hr (100%+ annualised) we want maximum exposure.
+        Capped so position never exceeds MAX_DEPLOY_PCT regardless.
+        """
+        if funding_rate >= 0.005:    # 0.50%+/hr → exceptional
+            return 1.50
+        elif funding_rate >= 0.003:  # 0.30-0.50%/hr → strong
+            return 1.25
+        elif funding_rate >= 0.002:  # 0.20-0.30%/hr → elevated
+            return 1.00
+        else:                        # 0.15-0.20%/hr → borderline, size down
+            return 0.75
+
     def _kelly_drawdown_factor(self) -> float:
         """
         Automatically reduce position size during a drawdown.
@@ -64,9 +80,11 @@ class RiskAgent:
             return 0.50
 
     def position_size(self, funding_rate: float = 0.002) -> float:
-        """Returns USDC size per leg, scaled by Kelly × drawdown factor."""
+        """Returns USDC size per leg: Kelly × rate tier × drawdown factor."""
         raw_size = self.kelly_size(funding_rate)
-        scaled   = raw_size * self._kelly_drawdown_factor()
+        scaled   = (raw_size
+                    * self._rate_tier_multiplier(funding_rate)
+                    * self._kelly_drawdown_factor())
         return max(scaled, 5.0) if scaled > 0 else 0
 
     def can_enter(self, rate, spread, predicted, n_open=0, verbose=True, trend="stable") -> bool:
