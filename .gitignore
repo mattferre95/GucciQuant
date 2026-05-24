@@ -1,0 +1,17 @@
+# Credentials — NEVER commit these
+.env
+
+# Database (contains trade history, regenerated on run)
+data/
+
+# Logs
+logs/
+
+# Claude Code local settings
+.claude/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
