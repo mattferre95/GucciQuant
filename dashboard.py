@@ -548,11 +548,50 @@ HTML = """<!DOCTYPE html>
   }
   @media (max-width: 900px) {
     .terminal { display: block; }
-    .sidebar { width: auto; padding-bottom: 12px; }
+    .sidebar {
+      width: auto;
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 12px 16px;
+      border-right: 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .wordmark {
+      padding: 0;
+      border-bottom: 0;
+      font-size: 12px;
+      letter-spacing: .2em;
+    }
+    .suite { margin-top: 2px; font-size: 8px; letter-spacing: .18em; }
     .navigation { display: none; }
-    .sidebar-state { margin-top: 0; padding-top: 12px; }
-    .header { position: static; height: auto; min-height: 70px; flex-direction: column; align-items: flex-start; gap: 14px; padding: 18px; }
-    .header-tools { width: 100%; justify-content: space-between; }
+    .sidebar-state {
+      margin-top: 0;
+      padding: 0;
+      border-top: 0;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .state-line { margin: 0; font-size: 10px; }
+    .feed-label { display: inline-flex; align-items: center; }
+    .feed-copy { display: none; }
+    .status-dot { width: 6px; height: 6px; margin-right: 6px; }
+    .mode-pill { min-height: 20px; padding: 0 8px; font-size: 9px; }
+    .header {
+      position: static;
+      height: 54px;
+      min-height: 54px;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+      padding: 0 16px;
+    }
+    .page-title { font-size: 16px; }
+    .page-subtitle, .updated { display: none; }
+    .header-tools { width: auto; margin-left: auto; }
+    .button { height: 30px; padding: 0 12px; font-size: 11px; }
     .content { padding: 16px; }
     .kpis, .grid-two { grid-template-columns: 1fr 1fr; }
   }
@@ -571,7 +610,7 @@ HTML = """<!DOCTYPE html>
       <a class="nav-link" href="#logs"><span class="nav-mark"></span>System Logs</a>
     </nav>
     <div class="sidebar-state">
-      <div class="state-line"><span><span class="status-dot" id="sidebar-dot"></span>System feed</span><span id="feed-state">ONLINE</span></div>
+      <div class="state-line"><span class="feed-label"><span class="status-dot" id="sidebar-dot"></span><span class="feed-copy">System feed</span></span><span id="feed-state">ONLINE</span></div>
       <span class="mode-pill" id="badge">PAPER</span>
     </div>
   </aside>
