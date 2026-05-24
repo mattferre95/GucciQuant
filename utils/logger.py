@@ -11,6 +11,17 @@ DB_PATH = os.getenv("DB_PATH", "data/gucci_quant.db")
 os.makedirs("data", exist_ok=True)
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS scan_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp    TEXT,
+    efficiency   REAL,
+    mins_to_fund INTEGER,
+    top_asset    TEXT,
+    top_rate_pct REAL,
+    opportunities INTEGER DEFAULT 0,
+    open_positions INTEGER DEFAULT 0,
+    action       TEXT
+);
 CREATE TABLE IF NOT EXISTS trades (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     timestamp    TEXT,
@@ -68,6 +79,20 @@ def init_db():
         if "spot_id" not in cols:
             c.execute("ALTER TABLE positions ADD COLUMN spot_id TEXT")
     print(f"  🗄️  DB ready: {DB_PATH}")
+
+
+def log_scan(efficiency, mins_to_fund, top_asset, top_rate_pct,
+             opportunities, open_positions, action):
+    """Record every 15-min scan cycle for dashboard activity feed."""
+    with get_conn() as c:
+        c.execute(
+            """INSERT INTO scan_log
+               (timestamp, efficiency, mins_to_fund, top_asset, top_rate_pct,
+                opportunities, open_positions, action)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (datetime.utcnow().isoformat(), efficiency, mins_to_fund,
+             top_asset, top_rate_pct, opportunities, open_positions, action)
+        )
 
 
 def log_trade(pos, net_pnl, exit_price=0, duration_hrs=1):

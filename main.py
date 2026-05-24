@@ -33,7 +33,7 @@ from execution.hyperliquid_trader import enter_position, exit_position
 from utils.logger                 import (init_db, log_trade, log_signal,
                                            save_open_position, close_saved_position,
                                            load_open_positions, get_daily_pnl,
-                                           get_total_trades)
+                                           get_total_trades, log_scan)
 from utils.validator              import run_preflight
 from utils.performance            import print_report
 
@@ -208,6 +208,23 @@ def scan_and_trade():
     if not active_positions:
         top = [(k, f"{v['rate']*100:.3f}%") for k, v in list(opps_map.items())[:3]]
         print(f"  ⏳ No qualifying entries | Top rates: {top}")
+
+    # ── Log this scan cycle to DB for dashboard activity feed ──
+    top_opp    = max(opps_map.values(), key=lambda o: o["rate"], default=None)
+    top_asset  = top_opp["asset"]   if top_opp else None
+    top_rate   = top_opp["rate"] * 100 if top_opp else 0.0
+    n_opps     = len(opps_map)
+    if active_positions:
+        action = "HOLDING: " + ", ".join(active_positions.keys())
+    elif n_opps:
+        action = "SCANNING — no entry signal"
+    else:
+        action = "SCANNING — rates below threshold"
+    try:
+        log_scan(eff, mtf, top_asset, round(top_rate, 4),
+                 n_opps, len(active_positions), action)
+    except Exception:
+        pass
 
 
 # Schedule

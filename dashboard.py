@@ -80,6 +80,11 @@ def stats():
         chart_labels.append(t["timestamp"][:16].replace("T", " "))
         chart_data.append(round(cumulative, 4))
 
+    # Scan activity log — last 96 entries (24hrs at 15min intervals)
+    scans = query(
+        "SELECT * FROM scan_log ORDER BY timestamp DESC LIMIT 96"
+    )
+
     return jsonify({
         "capital":       capital,
         "total_pnl":     round(total_pnl, 4),
@@ -89,6 +94,7 @@ def stats():
         "best_rate_pct": round(best_rate * 100, 4),
         "positions":     positions,
         "trades":        trades,
+        "scans":         scans,
         "chart_labels":  chart_labels,
         "chart_data":    chart_data,
         "mode":          os.getenv("PAPER_MODE", "true").lower(),
@@ -263,6 +269,12 @@ HTML = """<!DOCTYPE html>
     <div id="trades"></div>
   </div>
 
+  <!-- Scan activity log -->
+  <div class="panel" style="margin-top:14px">
+    <div class="panel-title">Scan Activity Log <span style="color:#2a2a4a;font-size:10px">— every 15 min</span></div>
+    <div id="scanlog" style="max-height:320px;overflow-y:auto"></div>
+  </div>
+
 </div>
 
 <script>
@@ -384,6 +396,37 @@ async function load() {
         </tr>`;
       }
       tEl.innerHTML = h + '</tbody></table>';
+    }
+
+    // Scan activity log
+    const slEl = document.getElementById('scanlog');
+    if (!d.scans || !d.scans.length) {
+      slEl.innerHTML = '<div class="empty">No scan data yet — appears after first 15-min cycle</div>';
+    } else {
+      let h = `<table><thead><tr>
+        <th>Time (UTC)</th><th>Efficiency</th><th>Funding in</th>
+        <th>Top Asset</th><th>Top Rate</th><th>Opportunities</th><th>Action</th>
+      </tr></thead><tbody>`;
+      for (const s of d.scans) {
+        const ts = (s.timestamp||'').substring(5,16).replace('T',' ');
+        const eff = s.efficiency || 0;
+        const effCol = eff >= 80 ? 'pos' : eff >= 50 ? '' : 'neg';
+        const action = s.action || '—';
+        let actionCol = 'dim';
+        if (action.startsWith('HOLDING')) actionCol = 'pos';
+        else if (action.includes('ENTERED')) actionCol = 'green';
+        const topRate = s.top_rate_pct ? s.top_rate_pct.toFixed(4) + '%/hr' : '—';
+        h += `<tr>
+          <td class="dim">${ts}</td>
+          <td class="${effCol}">${eff}%</td>
+          <td class="dim">${s.mins_to_fund != null ? s.mins_to_fund + ' min' : '—'}</td>
+          <td>${s.top_asset ? '<span class="tag">'+s.top_asset+'</span>' : '<span class="dim">—</span>'}</td>
+          <td>${topRate}</td>
+          <td class="dim" style="text-align:center">${s.opportunities || 0}</td>
+          <td class="${actionCol}" style="font-size:11px">${action}</td>
+        </tr>`;
+      }
+      slEl.innerHTML = h + '</tbody></table>';
     }
 
   } catch(e) {
