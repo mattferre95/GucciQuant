@@ -540,6 +540,8 @@ HTML = """<!DOCTYPE html>
   }
   .footer-links { display: flex; gap: 18px; }
   .footer-links a:hover { color: var(--secondary); }
+  .mobile-nav { display: none; }
+  .mobile-only { display: none; }
   @media (max-width: 1220px) {
     body { min-width: 0; }
     .sidebar { position: static; width: 194px; flex: 0 0 194px; }
@@ -592,8 +594,47 @@ HTML = """<!DOCTYPE html>
     .page-subtitle, .updated { display: none; }
     .header-tools { width: auto; margin-left: auto; }
     .button { height: 30px; padding: 0 12px; font-size: 11px; }
-    .content { padding: 16px; }
+    .content { padding: 16px 16px 66px; }
     .kpis, .grid-two { grid-template-columns: 1fr 1fr; }
+    .mobile-hide { display: none; }
+    .mobile-table { overflow-x: hidden; }
+    #daily, #trades, #scanlog { overflow-x: hidden; }
+    .mobile-table table, table.mobile-table { table-layout: fixed; }
+    .mobile-only { display: inline; }
+    .mobile-table .mobile-action {
+      max-width: 128px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mobile-nav {
+      position: fixed;
+      right: 12px;
+      bottom: 12px;
+      left: 12px;
+      z-index: 8;
+      height: 45px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 8px;
+      border: 1px solid var(--border-strong);
+      border-radius: 9px;
+      background: rgba(13,16,18,.96);
+      backdrop-filter: blur(12px);
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .mobile-nav a { padding: 10px 12px; }
+    .mobile-nav a:focus-visible { color: var(--text); }
+  }
+  @media (max-width: 360px) {
+    .kpi { min-height: 96px; padding: 13px 12px; }
+    .value { margin-top: 10px; font-size: 22px; }
+    .value.compact { font-size: 20px; }
+    .caption { margin-top: 6px; font-size: 10px; }
   }
 </style>
 </head>
@@ -712,6 +753,12 @@ HTML = """<!DOCTYPE html>
     </main>
   </section>
 </div>
+<nav class="mobile-nav" aria-label="Mobile sections">
+  <a href="#overview">Overview</a>
+  <a href="#positions">Positions</a>
+  <a href="#performance">PnL</a>
+  <a href="#logs">Logs</a>
+</nav>
 <script>
 let pnlChart = null;
 let rateChart = null;
@@ -750,9 +797,9 @@ function renderPositions(d) {
   }
   let rows = "";
   for (const p of positions) {
-    rows += `<tr><td><span class="instrument">${safe(p.asset)}</span></td><td>${safe(p.annual_pct)}%</td><td>${safe(p.held_hrs)} h</td><td>${safe(p.exit_threshold_pct)}%/hr</td><td class="right ${tone(p.est_pnl)}">${sign(p.est_pnl)}</td></tr>`;
+    rows += `<tr><td><span class="instrument">${safe(p.asset)}</span></td><td>${safe(p.annual_pct)}%</td><td class="mobile-hide">${safe(p.held_hrs)} h</td><td class="mobile-hide">${safe(p.exit_threshold_pct)}%/hr</td><td class="right ${tone(p.est_pnl)}">${sign(p.est_pnl)}</td></tr>`;
   }
-  $("pos").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Asset</th><th>Annualized</th><th>Held</th><th>Exit Rate</th><th class="right">Est. PnL</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  $("pos").innerHTML = `<div class="table-wrap mobile-table"><table><thead><tr><th>Asset</th><th><span class="mobile-hide">Annualized</span><span class="mobile-only">Rate</span></th><th class="mobile-hide">Held</th><th class="mobile-hide">Exit Rate</th><th class="right"><span class="mobile-hide">Est. PnL</span><span class="mobile-only">PnL</span></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function renderOperationalPanels(d) {
@@ -813,8 +860,8 @@ function renderTradeHistory(d) {
     $("trades").innerHTML = empty("No completed trades", "Closed trades will be listed here.");
     return;
   }
-  const rows = trades.map(t => `<tr><td>${safe((t.timestamp || "").slice(5, 16).replace("T", " "))}</td><td><span class="instrument">${safe(t.asset)}</span></td><td>${t.duration_hrs ? n(t.duration_hrs).toFixed(1) + " h" : "--"}</td><td>${money(t.size_usd)}</td><td class="positive">${sign(t.gross_pnl)}</td><td>${sign(-n(t.fees))}</td><td class="right ${tone(t.net_pnl)}">${sign(t.net_pnl)}</td></tr>`).join("");
-  $("trades").innerHTML = `<table><thead><tr><th>Time UTC</th><th>Asset</th><th>Duration</th><th>Size</th><th>Funding</th><th>Fees</th><th class="right">Net PnL</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const rows = trades.map(t => `<tr><td>${safe((t.timestamp || "").slice(5, 16).replace("T", " "))}</td><td><span class="instrument">${safe(t.asset)}</span></td><td class="mobile-hide">${t.duration_hrs ? n(t.duration_hrs).toFixed(1) + " h" : "--"}</td><td class="mobile-hide">${money(t.size_usd)}</td><td class="positive mobile-hide">${sign(t.gross_pnl)}</td><td class="mobile-hide">${sign(-n(t.fees))}</td><td class="right ${tone(t.net_pnl)}">${sign(t.net_pnl)}</td></tr>`).join("");
+  $("trades").innerHTML = `<table class="mobile-table"><thead><tr><th>Time UTC</th><th>Asset</th><th class="mobile-hide">Duration</th><th class="mobile-hide">Size</th><th class="mobile-hide">Funding</th><th class="mobile-hide">Fees</th><th class="right">Net PnL</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function renderDailyBreakdown(d) {
@@ -823,7 +870,7 @@ function renderDailyBreakdown(d) {
     $("daily").innerHTML = empty("No daily settlements", "Settled trading days will be summarized here.");
     return;
   }
-  $("daily").innerHTML = `<table><thead><tr><th>Date</th><th>Trades</th><th>Gross</th><th>Fees</th><th class="right">Net</th></tr></thead><tbody>${rows.map(row => `<tr><td>${safe(row.day)}</td><td>${safe(row.trades)}</td><td class="positive">${sign(row.gross)}</td><td>${sign(-n(row.fees))}</td><td class="right ${tone(row.net)}">${sign(row.net)}</td></tr>`).join("")}</tbody></table>`;
+  $("daily").innerHTML = `<table class="mobile-table"><thead><tr><th>Date</th><th class="mobile-hide">Trades</th><th class="mobile-hide">Gross</th><th class="mobile-hide">Fees</th><th class="right">Net</th></tr></thead><tbody>${rows.map(row => `<tr><td>${safe(row.day)}</td><td class="mobile-hide">${safe(row.trades)}</td><td class="positive mobile-hide">${sign(row.gross)}</td><td class="mobile-hide">${sign(-n(row.fees))}</td><td class="right ${tone(row.net)}">${sign(row.net)}</td></tr>`).join("")}</tbody></table>`;
 }
 
 function renderLogs(d) {
@@ -832,8 +879,8 @@ function renderLogs(d) {
     $("scanlog").innerHTML = empty("No system log entries", "Recorded scans will appear here.");
     return;
   }
-  const rows = scans.map(s => `<tr><td>${safe((s.timestamp || "").slice(5, 16).replace("T", " "))}</td><td>${n(s.efficiency).toFixed(0)}%</td><td>${s.mins_to_fund != null ? safe(s.mins_to_fund) + " min" : "--"}</td><td>${s.top_asset ? safe(s.top_asset) : "--"}</td><td>${s.top_rate_pct ? n(s.top_rate_pct).toFixed(4) + "%" : "--"}</td><td class="right">${safe(s.action || "--")}</td></tr>`).join("");
-  $("scanlog").innerHTML = `<table><thead><tr><th>Time UTC</th><th>Efficiency</th><th>Funding In</th><th>Top Asset</th><th>Top Rate</th><th class="right">Action</th></tr></thead><tbody>${rows}</tbody></table>`;
+  const rows = scans.map(s => `<tr><td>${safe((s.timestamp || "").slice(5, 16).replace("T", " "))}</td><td class="mobile-hide">${n(s.efficiency).toFixed(0)}%</td><td class="mobile-hide">${s.mins_to_fund != null ? safe(s.mins_to_fund) + " min" : "--"}</td><td>${s.top_asset ? safe(s.top_asset) : "--"}</td><td class="mobile-hide">${s.top_rate_pct ? n(s.top_rate_pct).toFixed(4) + "%" : "--"}</td><td class="right mobile-action">${safe(s.action || "--")}</td></tr>`).join("");
+  $("scanlog").innerHTML = `<table class="mobile-table"><thead><tr><th>Time UTC</th><th class="mobile-hide">Efficiency</th><th class="mobile-hide">Funding In</th><th>Asset</th><th class="mobile-hide">Top Rate</th><th class="right">Action</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function renderAttribution(d) {
