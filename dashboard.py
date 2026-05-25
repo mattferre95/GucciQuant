@@ -636,6 +636,15 @@ HTML = """<!DOCTYPE html>
     .value.compact { font-size: 20px; }
     .caption { margin-top: 6px; font-size: 10px; }
   }
+  @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .status-dot.market-active { background: var(--positive); animation: pulse-dot 2.2s ease-in-out infinite; box-shadow: 0 0 0 4px rgba(109,157,130,.1); }
+  .status-dot.market-standby { background: var(--negative); box-shadow: 0 0 0 4px var(--negative-fill); }
+  .kpi.kpi-hot { border-color: rgba(109,157,130,.22); }
+  .kpi.kpi-cold { border-color: rgba(163,107,107,.18); }
+  .threshold-bar { margin-top: 9px; height: 3px; border-radius: 99px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .threshold-fill { height: 100%; border-radius: 99px; transition: width .6s ease; }
+  .threshold-fill.hot { background: var(--positive); }
+  .threshold-fill.cold { background: var(--negative); }
 </style>
 </head>
 <body>
@@ -652,6 +661,7 @@ HTML = """<!DOCTYPE html>
     </nav>
     <div class="sidebar-state">
       <div class="state-line"><span class="feed-label"><span class="status-dot" id="sidebar-dot"></span><span class="feed-copy">System feed</span></span><span id="feed-state">ONLINE</span></div>
+      <div class="state-line"><span class="feed-label"><span class="status-dot market-standby" id="market-dot"></span><span class="feed-copy">Market</span></span><span id="market-state">—</span></div>
       <span class="mode-pill" id="badge">PAPER</span>
     </div>
   </aside>
@@ -671,7 +681,7 @@ HTML = """<!DOCTYPE html>
         <article class="kpi"><div class="label">Capital</div><div class="value" id="capital">--</div><div class="caption">USDC tracked balance</div></article>
         <article class="kpi"><div class="label">Net PnL</div><div class="value" id="allpnl">--</div><div class="caption">All-time after fees</div></article>
         <article class="kpi"><div class="label">Today</div><div class="value" id="daypnl">--</div><div class="caption" id="today-date">--</div></article>
-        <article class="kpi"><div class="label">Best Funding Rate</div><div class="value compact" id="bestrate">--</div><div class="caption">Observed today / hour</div></article>
+        <article class="kpi" id="rate-kpi"><div class="label">Current Rate</div><div class="value compact" id="bestrate">--</div><div class="caption" id="rate-caption">Latest scan observation</div><div class="threshold-bar"><div class="threshold-fill cold" id="threshold-fill" style="width:0%"></div></div></article>
       </section>
       <div class="grid-primary">
         <div class="column">
@@ -797,7 +807,9 @@ function renderPositions(d) {
   }
   let rows = "";
   for (const p of positions) {
-    rows += `<tr><td><span class="instrument">${safe(p.asset)}</span></td><td>${safe(p.annual_pct)}%</td><td class="mobile-hide">${safe(p.held_hrs)} h</td><td class="mobile-hide">${safe(p.exit_threshold_pct)}%/hr</td><td class="right ${tone(p.est_pnl)}">${sign(p.est_pnl)}</td></tr>`;
+    const ratePct = n(p.annual_pct) / (24 * 365);  // back to %/hr
+    const posHot  = ratePct >= n(p.exit_threshold_pct);
+    rows += `<tr><td><span class="instrument">${safe(p.asset)}</span></td><td class="${posHot ? "positive" : "negative"}">${safe(p.annual_pct)}%</td><td class="mobile-hide">${safe(p.held_hrs)} h</td><td class="mobile-hide">${safe(p.exit_threshold_pct)}%/hr</td><td class="right ${tone(p.est_pnl)}">${sign(p.est_pnl)}</td></tr>`;
   }
   $("pos").innerHTML = `<div class="table-wrap mobile-table"><table><thead><tr><th>Asset</th><th><span class="mobile-hide">Annualized</span><span class="mobile-only">Rate</span></th><th class="mobile-hide">Held</th><th class="mobile-hide">Exit Rate</th><th class="right"><span class="mobile-hide">Est. PnL</span><span class="mobile-only">PnL</span></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -879,7 +891,13 @@ function renderLogs(d) {
     $("scanlog").innerHTML = empty("No system log entries", "Recorded scans will appear here.");
     return;
   }
-  const rows = scans.map(s => `<tr><td>${safe((s.timestamp || "").slice(5, 16).replace("T", " "))}</td><td class="mobile-hide">${n(s.efficiency).toFixed(0)}%</td><td class="mobile-hide">${s.mins_to_fund != null ? safe(s.mins_to_fund) + " min" : "--"}</td><td>${s.top_asset ? safe(s.top_asset) : "--"}</td><td class="mobile-hide">${s.top_rate_pct ? n(s.top_rate_pct).toFixed(4) + "%" : "--"}</td><td class="right mobile-action">${safe(s.action || "--")}</td></tr>`).join("");
+  const rows = scans.map(s => {
+    const rPct = n(s.top_rate_pct);
+    const rHot = rPct >= 0.15;
+    const rClass = s.top_rate_pct ? (rHot ? "positive" : "negative") : "";
+    const rText  = s.top_rate_pct ? rPct.toFixed(4) + "%" : "--";
+    return `<tr><td>${safe((s.timestamp || "").slice(5, 16).replace("T", " "))}</td><td class="mobile-hide">${n(s.efficiency).toFixed(0)}%</td><td class="mobile-hide">${s.mins_to_fund != null ? safe(s.mins_to_fund) + " min" : "--"}</td><td>${s.top_asset ? safe(s.top_asset) : "--"}</td><td class="mobile-hide ${rClass}">${rText}</td><td class="right mobile-action">${safe(s.action || "--")}</td></tr>`;
+  }).join("");
   $("scanlog").innerHTML = `<table class="mobile-table"><thead><tr><th>Time UTC</th><th class="mobile-hide">Efficiency</th><th class="mobile-hide">Funding In</th><th>Asset</th><th class="mobile-hide">Top Rate</th><th class="right">Action</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -958,7 +976,21 @@ async function load() {
     $("daypnl").textContent = `${sign(d.today_pnl)} USDC`;
     $("daypnl").className = `value ${tone(d.today_pnl)}`;
     $("today-date").textContent = new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-    $("bestrate").textContent = `${n(d.best_rate_pct).toFixed(4)}%`;
+    // ── Market rate indicator (current best from latest scan) ──
+    const ENTRY_THRESHOLD = 0.15;   // 0.15%/hr — matches MIN_RATE in risk_agent
+    const latestScan = (d.scans || [])[0];
+    const currentRate = latestScan ? n(latestScan.top_rate_pct) : 0;
+    const isHot = currentRate >= ENTRY_THRESHOLD;
+    $("bestrate").textContent = `${currentRate.toFixed(4)}%`;
+    $("bestrate").className = `value compact ${isHot ? "positive" : "negative"}`;
+    $("rate-kpi").className = `kpi ${isHot ? "kpi-hot" : "kpi-cold"}`;
+    $("rate-caption").textContent = isHot ? "✓ Above entry threshold" : `Need ${ENTRY_THRESHOLD.toFixed(2)}%+ to trade`;
+    const fillPct = Math.min(currentRate / 0.40 * 100, 100);  // scale: 0.40%/hr = full bar
+    const fill = $("threshold-fill");
+    fill.style.width = `${fillPct}%`;
+    fill.className = `threshold-fill ${isHot ? "hot" : "cold"}`;
+    $("market-dot").className = `status-dot ${isHot ? "market-active" : "market-standby"}`;
+    $("market-state").textContent = isHot ? "ACTIVE" : "STANDBY";
     const badge = $("badge");
     badge.textContent = d.mode === "false" ? "LIVE" : "PAPER";
     badge.classList.toggle("live", d.mode === "false");
