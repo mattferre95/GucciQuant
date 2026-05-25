@@ -174,6 +174,15 @@ def get_daily_pnl(d=None) -> float:
         ).fetchone()[0]
 
 
+def has_history() -> bool:
+    """Returns True if the DB contains prior scan data — used to detect restarts."""
+    try:
+        with get_conn() as c:
+            return c.execute("SELECT COUNT(*) FROM scan_log").fetchone()[0] > 0
+    except Exception:
+        return False
+
+
 def get_total_trades(d=None) -> int:
     d = d or date.today().isoformat()
     with get_conn() as c:

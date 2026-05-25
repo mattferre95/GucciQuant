@@ -139,6 +139,44 @@ def stats():
     # ── Scan log ──
     scans = query("SELECT * FROM scan_log ORDER BY timestamp DESC LIMIT 96")
 
+    # ── Asset P&L breakdown ──
+    asset_pnl = query("""
+        SELECT asset, COUNT(*) as trades,
+               ROUND(SUM(net_pnl),4)        as net,
+               ROUND(SUM(gross_pnl),4)      as gross,
+               ROUND(SUM(fees),4)           as fees,
+               ROUND(AVG(funding_rate)*100,4) as avg_rate_pct
+        FROM trades GROUP BY asset ORDER BY net DESC
+    """)
+
+    # ── Re-entry cooldown (closed in last 30 min, no open position) ──
+    cooldown_assets = query("""
+        SELECT asset,
+               MAX(timestamp) as last_exit,
+               ROUND((julianday('now') - julianday(MAX(timestamp))) * 24 * 60, 1) as mins_ago,
+               ROUND(30 - (julianday('now') - julianday(MAX(timestamp))) * 24 * 60, 1) as mins_left
+        FROM trades
+        WHERE asset NOT IN (SELECT asset FROM positions WHERE status='open')
+        GROUP BY asset
+        HAVING mins_ago < 30 AND mins_ago >= 0
+        ORDER BY mins_left ASC
+    """)
+
+    # ── Bot configuration (env vars + hardcoded constants from risk_agent) ──
+    config = {
+        "paper_mode":       os.getenv("PAPER_MODE", "true").lower() == "true",
+        "starting_capital": float(os.getenv("STARTING_CAPITAL", "67")),
+        "max_positions":    int(os.getenv("MAX_POSITIONS", "3")),
+        "daily_loss_limit": float(os.getenv("DAILY_LOSS_LIMIT", "5")),
+        "max_capital_pct":  float(os.getenv("MAX_CAPITAL_DEPLOYED", "80")),
+        "min_rate_pct":     0.15,
+        "kelly_fraction":   0.50,
+        "min_hold_hrs":     1.0,
+        "fee_rate_pct":     0.10,
+        "reentry_mins":     30,
+        "spike_threshold":  0.30,
+    }
+
     return jsonify({
         "capital":          capital,
         "total_pnl":        round(total_pnl, 4),
@@ -158,9 +196,27 @@ def stats():
         "chart_data":       chart_data,
         "rate_series":      dict(rate_series),
         "annual_return_pct": annual_return_pct,
+        "asset_pnl":        asset_pnl,
+        "cooldown_assets":  cooldown_assets,
+        "config":           config,
         "mode":             os.getenv("PAPER_MODE", "true").lower(),
         "last_updated":     now.strftime("%H:%M:%S UTC"),
     })
+
+
+@app.route("/api/trades.csv")
+def trades_csv():
+    from flask import Response
+    import csv, io
+    rows = query("SELECT timestamp,asset,entry_price,exit_price,size_usd,funding_rate,gross_pnl,fees,net_pnl,duration_hrs,paper FROM trades ORDER BY timestamp DESC")
+    if not rows:
+        return Response("No trades yet\n", mimetype="text/plain")
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=rows[0].keys())
+    writer.writeheader()
+    writer.writerows(rows)
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment;filename=gucci_trades.csv"})
 
 
 # ── HTML ─────────────────────────────────────────────────────────────────────
@@ -350,9 +406,25 @@ HTML = """<!DOCTYPE html>
   .content { display: flex; flex-direction: column; gap: 14px; padding: 22px 28px 34px; }
   .kpis {
     display: grid;
-    grid-template-columns: repeat(4, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 12px;
   }
+  .countdown-ring { font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+  .config-row {
+    display: flex; justify-content: space-between; align-items: center;
+    min-height: 34px; border-bottom: 1px solid rgba(255,255,255,.05);
+    color: var(--secondary); font-size: 12px;
+  }
+  .config-row:last-child { border-bottom: 0; }
+  .config-row strong { color: var(--text); font-weight: 500; font-variant-numeric: tabular-nums; }
+  .cooldown-row {
+    display: flex; justify-content: space-between; align-items: center;
+    min-height: 34px; border-bottom: 1px solid rgba(255,255,255,.05);
+    color: var(--secondary); font-size: 12px;
+  }
+  .cooldown-row:last-child { border-bottom: 0; }
+  .progress-bar { width: 64px; height: 4px; border-radius: 99px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 99px; background: var(--warning); }
   .panel, .kpi {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -682,6 +754,7 @@ HTML = """<!DOCTYPE html>
         <article class="kpi"><div class="label">Net PnL</div><div class="value" id="allpnl">--</div><div class="caption">All-time after fees</div></article>
         <article class="kpi"><div class="label">Today</div><div class="value" id="daypnl">--</div><div class="caption" id="today-date">--</div></article>
         <article class="kpi" id="rate-kpi"><div class="label">Current Rate</div><div class="value compact" id="bestrate">--</div><div class="caption" id="rate-caption">Latest scan observation</div><div class="threshold-bar"><div class="threshold-fill cold" id="threshold-fill" style="width:0%"></div></div></article>
+        <article class="kpi"><div class="label">Next Funding</div><div class="value compact countdown-ring" id="countdown">--:--</div><div class="caption" id="countdown-caption">Until next hourly period</div></article>
       </section>
       <div class="grid-primary">
         <div class="column">
@@ -716,8 +789,14 @@ HTML = """<!DOCTYPE html>
           </section>
           <section class="panel">
             <div class="panel-header">
+              <div><h2 class="panel-title">P&amp;L by Asset</h2><div class="panel-meta">Net performance per instrument</div></div>
+            </div>
+            <div id="asset-pnl"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-header">
               <div><h2 class="panel-title">Trade History</h2><div class="panel-meta">Completed position ledger</div></div>
-              <span class="panel-count" id="trade-count">--</span>
+              <div style="display:flex;gap:8px;align-items:center"><span class="panel-count" id="trade-count">--</span><a href="/api/trades.csv" class="button" style="height:26px;padding:0 10px;font-size:11px">Export CSV</a></div>
             </div>
             <div class="table-wrap table-scroll" id="trades"></div>
           </section>
@@ -741,6 +820,14 @@ HTML = """<!DOCTYPE html>
           <section class="panel">
             <div class="panel-header"><div><h2 class="panel-title">Margin Info</h2><div class="panel-meta">Capital allocated to positions</div></div></div>
             <div id="margin-info" class="ledger"></div>
+          </section>
+          <section class="panel" id="cooldown-panel">
+            <div class="panel-header"><div><h2 class="panel-title">Re-entry Cooldown</h2><div class="panel-meta">Assets blocked for 30 min post-exit</div></div></div>
+            <div id="cooldown"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-header"><div><h2 class="panel-title">Bot Configuration</h2><div class="panel-meta">Active parameters</div></div></div>
+            <div id="bot-config"></div>
           </section>
           <section class="panel">
             <div class="panel-header"><div><h2 class="panel-title">Alerts</h2><div class="panel-meta">Dashboard notices</div></div></div>
@@ -972,7 +1059,19 @@ function renderCharts(d) {
   $("rate-chart").style.display = "block";
   $("no-rate-chart").style.display = "none";
   const labels = [...new Set(assets.flatMap(asset => series[asset].labels))].sort();
-  const datasets = assets.map((asset, index) => {
+  // Threshold reference line at 0.15%/hr (entry minimum)
+  const thresholdDataset = {
+    label: "Entry threshold",
+    data: labels.map(() => 0.15),
+    borderColor: "rgba(109,157,130,0.55)",
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderDash: [5, 4],
+    pointRadius: 0,
+    spanGaps: true,
+    order: 99
+  };
+  const assetDatasets = assets.map((asset, index) => {
     const color = ASSET_COLORS[asset] || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
     return {
       label: asset,
@@ -982,17 +1081,84 @@ function renderCharts(d) {
       borderWidth: 1.5,
       tension: .25,
       pointRadius: 0,
-      spanGaps: true
+      spanGaps: true,
+      order: index
     };
   });
-  const options = { ...chartOptions, plugins: { legend: { display: true, align: "end", labels: { color: grid.ticks, boxWidth: 14, boxHeight: 1, padding: 14, font: { size: 10 } } } }, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, ticks: { ...chartOptions.scales.y.ticks, callback: value => `${n(value).toFixed(4)}%` } } } };
+  const datasets = [thresholdDataset, ...assetDatasets];
+  // Inline plugin: red shading below y=0 (negative funding rate zone)
+  const negativeZonePlugin = {
+    id: "negativeZone",
+    beforeDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea || !scales.y) return;
+      const y0 = scales.y.getPixelForValue(0);
+      if (y0 <= chartArea.top || y0 >= chartArea.bottom) return;
+      ctx.save();
+      ctx.fillStyle = "rgba(163,107,107,0.07)";
+      ctx.fillRect(chartArea.left, y0, chartArea.width, chartArea.bottom - y0);
+      // subtle zero line
+      ctx.strokeStyle = "rgba(163,107,107,0.3)";
+      ctx.lineWidth = 0.75;
+      ctx.beginPath();
+      ctx.moveTo(chartArea.left, y0);
+      ctx.lineTo(chartArea.right, y0);
+      ctx.stroke();
+      ctx.restore();
+    }
+  };
+  const options = { ...chartOptions, plugins: { legend: { display: true, align: "end", labels: { color: grid.ticks, boxWidth: 14, boxHeight: 1, padding: 14, font: { size: 10 }, filter: item => item.text !== "Entry threshold" } } }, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, ticks: { ...chartOptions.scales.y.ticks, callback: value => `${n(value).toFixed(4)}%` } } } };
   if (rateChart) {
     rateChart.data.labels = labels;
     rateChart.data.datasets = datasets;
     rateChart.update("none");
   } else {
-    rateChart = new Chart($("rate-chart"), { type: "line", data: { labels, datasets }, options });
+    rateChart = new Chart($("rate-chart"), { type: "line", data: { labels, datasets }, options, plugins: [negativeZonePlugin] });
   }
+}
+
+function renderAssetPnl(d) {
+  const rows = d.asset_pnl || [];
+  if (!rows.length) {
+    $("asset-pnl").innerHTML = empty("No completed trades yet", "Asset breakdown appears after the first closed position.");
+    return;
+  }
+  const trs = rows.map(r => {
+    const pct = n(r.net) >= 0 ? "positive" : "negative";
+    return `<tr><td>${assetChip(r.asset)}</td><td class="mobile-hide">${safe(r.trades)}</td><td class="mobile-hide">${n(r.avg_rate_pct).toFixed(4)}%</td><td class="mobile-hide">${sign(r.gross)}</td><td class="mobile-hide">${sign(-n(r.fees))}</td><td class="right ${pct}">${sign(r.net)}</td></tr>`;
+  }).join("");
+  $("asset-pnl").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Asset</th><th class="mobile-hide">Trades</th><th class="mobile-hide">Avg Rate</th><th class="mobile-hide">Funding</th><th class="mobile-hide">Fees</th><th class="right">Net PnL</th></tr></thead><tbody>${trs}</tbody></table></div>`;
+}
+
+function renderCooldown(d) {
+  const assets = d.cooldown_assets || [];
+  const panel = $("cooldown-panel");
+  if (!assets.length) {
+    panel.style.display = "none";
+    return;
+  }
+  panel.style.display = "";
+  const rows = assets.map(a => {
+    const pct = Math.max(0, Math.min(100, (n(a.mins_left) / 30) * 100));
+    return `<div class="cooldown-row">${assetChip(a.asset)}<span style="color:var(--muted);font-size:11px">${n(a.mins_left).toFixed(0)} min left</span><div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div></div>`;
+  }).join("");
+  $("cooldown").innerHTML = rows;
+}
+
+function renderConfig(d) {
+  const c = d.config || {};
+  const row = (label, val) => `<div class="config-row"><span>${label}</span><strong>${val}</strong></div>`;
+  $("bot-config").innerHTML = `
+    ${row("Mode",              c.paper_mode ? "📄 Paper" : "💰 Live")}
+    ${row("Min entry rate",   `${n(c.min_rate_pct).toFixed(2)}%/hr`)}
+    ${row("Max positions",    c.max_positions)}
+    ${row("Kelly fraction",   `${n(c.kelly_fraction * 100).toFixed(0)}% (half)`)}
+    ${row("Daily loss limit", `$${n(c.daily_loss_limit).toFixed(2)}`)}
+    ${row("Max capital deploy", `${n(c.max_capital_pct).toFixed(0)}%`)}
+    ${row("Min hold",         `${n(c.min_hold_hrs).toFixed(1)} hr`)}
+    ${row("Round-trip fee",   `${n(c.fee_rate_pct).toFixed(2)}%`)}
+    ${row("Re-entry cooldown",`${n(c.reentry_mins).toFixed(0)} min`)}
+    ${row("Spike alert at",   `${n(c.spike_threshold).toFixed(2)}%/hr`)}`;
 }
 
 async function load() {
@@ -1033,8 +1199,11 @@ async function load() {
     renderActivity(d);
     renderAttribution(d);
     renderDailyBreakdown(d);
+    renderAssetPnl(d);
     renderTradeHistory(d);
     renderLogs(d);
+    renderCooldown(d);
+    renderConfig(d);
     renderCharts(d);
   } catch (error) {
     $("upd").textContent = "CONNECTION ERROR";
@@ -1044,6 +1213,21 @@ async function load() {
     $("alerts").innerHTML = `<div class="notice error">Dashboard statistics feed unavailable.</div>`;
   }
 }
+
+// ── Live funding countdown (Hyperliquid settles every hour at :00 UTC) ──
+function tickCountdown() {
+  const now = new Date();
+  const totalSecs = (59 - now.getUTCMinutes()) * 60 + (59 - now.getUTCSeconds());
+  const mins = Math.floor(totalSecs / 60);
+  const secs = totalSecs % 60;
+  const disp = `${String(mins).padStart(2,"0")}:${String(secs).padStart(2,"0")}`;
+  $("countdown").textContent = disp;
+  // Colour hint: orange when < 5 min (prime entry window)
+  $("countdown").className = `value compact countdown-ring ${mins < 5 ? "warning" : ""}`;
+  $("countdown-caption").textContent = mins < 5 ? "⚡ Prime entry window" : "Until next hourly period";
+}
+tickCountdown();
+setInterval(tickCountdown, 1000);
 
 $("refresh").addEventListener("click", load);
 load();

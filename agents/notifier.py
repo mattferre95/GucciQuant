@@ -38,8 +38,12 @@ def _send(text: str):
         print(f"[NOTIFY] {text}")
 
 
-def alert_startup():
-    _send("🟢 **GUCCI QUANT v1.1 ONLINE**\nAll preflight checks passed. Scanning markets.")
+def alert_startup(is_restart=False):
+    if is_restart:
+        _send("🔄 **GUCCI QUANT RESTARTED**\n"
+              "Bot recovered after unexpected stop. Resuming operations automatically.")
+    else:
+        _send("🟢 **GUCCI QUANT v1.1 ONLINE**\nAll preflight checks passed. Scanning markets.")
 
 def alert_risk_breach(reason: str):
     _send(f"🚨 **RISK BREACH**\n{reason}\nTrading suspended.")

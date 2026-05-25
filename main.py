@@ -35,7 +35,8 @@ from execution.hyperliquid_trader import enter_position, exit_position
 from utils.logger                 import (init_db, log_trade, log_signal,
                                            save_open_position, close_saved_position,
                                            load_open_positions, get_daily_pnl,
-                                           get_total_trades, log_scan, log_rate_snapshot)
+                                           get_total_trades, log_scan, log_rate_snapshot,
+                                           has_history)
 from utils.validator              import run_preflight
 from utils.performance            import print_report
 
@@ -355,6 +356,7 @@ if __name__ == "__main__":
     run_preflight(abort_on_fail=True)
 
     init_db()
+    is_restart = has_history()   # True if DB has prior scans → crash/restart
     recover_positions()
 
     start_command_listener(
@@ -363,7 +365,7 @@ if __name__ == "__main__":
         get_rates_fn=get_opportunities
     )
 
-    alert_startup()
+    alert_startup(is_restart=is_restart)
     scan_and_trade()
 
     print(f"⏰ Scanning every 15 minutes. Ctrl+C to stop cleanly.\n")
