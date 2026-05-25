@@ -784,8 +784,24 @@ const grid = {
   color: "rgba(255,255,255,.045)",
   ticks: "#71717a",
   line: "#d4d4d8",
-  lines: ["#f4f4f5", "#b8b8bc", "#85858c", "#606067", "#444449", "#98989f"]
 };
+// Per-asset colors — consistent regardless of order in API response
+const ASSET_COLORS = {
+  HYPE:   "#a78bfa",  // violet
+  MON:    "#4ade80",  // green
+  BERA:   "#fbbf24",  // amber
+  ANIME:  "#f87171",  // red/coral
+  AZTEC:  "#60a5fa",  // blue
+  PURR:   "#e879f9",  // fuchsia
+  PUMP:   "#fb923c",  // orange
+  STABLE: "#2dd4bf",  // teal
+  TRUMP:  "#facc15",  // gold
+  WLFI:   "#818cf8",  // indigo
+};
+// Fallback palette for any asset not listed above
+const FALLBACK_COLORS = ["#a78bfa","#4ade80","#fbbf24","#f87171","#60a5fa",
+                         "#e879f9","#fb923c","#2dd4bf","#facc15","#818cf8",
+                         "#34d399","#f472b6","#38bdf8","#a3e635","#c084fc"];
 const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
@@ -942,16 +958,19 @@ function renderCharts(d) {
   $("rate-chart").style.display = "block";
   $("no-rate-chart").style.display = "none";
   const labels = [...new Set(assets.flatMap(asset => series[asset].labels))].sort();
-  const datasets = assets.map((asset, index) => ({
-    label: asset,
-    data: labels.map(label => { const i = series[asset].labels.indexOf(label); return i >= 0 ? series[asset].data[i] : null; }),
-    borderColor: grid.lines[index % grid.lines.length],
-    backgroundColor: "transparent",
-    borderWidth: 1.25,
-    tension: .25,
-    pointRadius: 0,
-    spanGaps: true
-  }));
+  const datasets = assets.map((asset, index) => {
+    const color = ASSET_COLORS[asset] || FALLBACK_COLORS[index % FALLBACK_COLORS.length];
+    return {
+      label: asset,
+      data: labels.map(label => { const i = series[asset].labels.indexOf(label); return i >= 0 ? series[asset].data[i] : null; }),
+      borderColor: color,
+      backgroundColor: "transparent",
+      borderWidth: 1.5,
+      tension: .25,
+      pointRadius: 0,
+      spanGaps: true
+    };
+  });
   const options = { ...chartOptions, plugins: { legend: { display: true, align: "end", labels: { color: grid.ticks, boxWidth: 14, boxHeight: 1, padding: 14, font: { size: 10 } } } }, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, ticks: { ...chartOptions.scales.y.ticks, callback: value => `${n(value).toFixed(4)}%` } } } };
   if (rateChart) {
     rateChart.data.labels = labels;
