@@ -141,6 +141,8 @@ def check_liquidation_risk():
                     # Force close if within 10%
                     if distance < 0.10 and asset in active_positions:
                         close_all(f"Liquidation protection — {asset} {distance*100:.1f}% from liq")
+    except Exception as e:
+        alert_error(f"Liquidation check failed: {e}")
 
 
 def scan_and_trade():
