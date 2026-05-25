@@ -779,6 +779,12 @@ const sign = (value, decimals=4) => `${n(value) >= 0 ? "+" : "-"}${Math.abs(n(va
 const money = value => `$${n(value).toFixed(2)}`;
 const tone = value => n(value) > 0 ? "positive" : n(value) < 0 ? "negative" : "";
 const empty = (title, note="") => `<div class="empty"><div class="empty-title">${safe(title)}</div>${note ? `<div class="empty-note">${safe(note)}</div>` : ""}</div>`;
+// Returns the designated color for an asset, or a neutral fallback
+const assetColor = asset => ASSET_COLORS[asset] || "#a1a1aa";
+// Colored chip used wherever an asset name appears in the UI
+const assetChip = asset => `<span class="instrument" style="color:${assetColor(asset)};border-color:${assetColor(asset)}40">${safe(asset)}</span>`;
+// Plain colored text (no border box) — for inline use in sentences
+const assetText = asset => `<span style="color:${assetColor(asset)};font-weight:500">${safe(asset)}</span>`;
 
 const grid = {
   color: "rgba(255,255,255,.045)",
@@ -825,7 +831,7 @@ function renderPositions(d) {
   for (const p of positions) {
     const ratePct = n(p.annual_pct) / (24 * 365);  // back to %/hr
     const posHot  = ratePct >= n(p.exit_threshold_pct);
-    rows += `<tr><td><span class="instrument">${safe(p.asset)}</span></td><td class="${posHot ? "positive" : "negative"}">${safe(p.annual_pct)}%</td><td class="mobile-hide">${safe(p.held_hrs)} h</td><td class="mobile-hide">${safe(p.exit_threshold_pct)}%/hr</td><td class="right ${tone(p.est_pnl)}">${sign(p.est_pnl)}</td></tr>`;
+    rows += `<tr><td>${assetChip(p.asset)}</td><td class="${posHot ? "positive" : "negative"}">${safe(p.annual_pct)}%</td><td class="mobile-hide">${safe(p.held_hrs)} h</td><td class="mobile-hide">${safe(p.exit_threshold_pct)}%/hr</td><td class="right ${tone(p.est_pnl)}">${sign(p.est_pnl)}</td></tr>`;
   }
   $("pos").innerHTML = `<div class="table-wrap mobile-table"><table><thead><tr><th>Asset</th><th><span class="mobile-hide">Annualized</span><span class="mobile-only">Rate</span></th><th class="mobile-hide">Held</th><th class="mobile-hide">Exit Rate</th><th class="right"><span class="mobile-hide">Est. PnL</span><span class="mobile-only">PnL</span></th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -858,7 +864,7 @@ function renderOpportunities(d) {
     return;
   }
   $("opps").innerHTML = `
-    <div class="ledger-row"><span>Top asset</span><strong>${scan.top_asset ? safe(scan.top_asset) : "--"}</strong></div>
+    <div class="ledger-row"><span>Top asset</span><strong>${scan.top_asset ? assetChip(scan.top_asset) : "--"}</strong></div>
     <div class="ledger-row"><span>Observed rate</span><strong>${scan.top_rate_pct ? n(scan.top_rate_pct).toFixed(4) + "%/hr" : "--"}</strong></div>
     <div class="ledger-row"><span>Opportunities</span><strong>${n(scan.opportunities).toFixed(0)}</strong></div>
     <div class="ledger-row"><span>Scanner action</span><strong>${safe(scan.action || "--")}</strong></div>`;
@@ -869,16 +875,24 @@ function renderActivity(d) {
   const scans = (d.scans || []).slice(0, 3);
   const items = trades.length ? trades.map(t => ({
     time: (t.timestamp || "").slice(5, 16).replace("T", " "),
-    copy: `${t.asset || "--"} closed / ${sign(t.net_pnl)} USDC`
+    copy: t.asset || "--",
+    pnl: sign(t.net_pnl),
+    isTrade: true
   })) : scans.map(s => ({
     time: (s.timestamp || "").slice(5, 16).replace("T", " "),
-    copy: s.action || "Scan cycle recorded"
+    copy: s.action || "Scan cycle recorded",
+    isTrade: false
   }));
   if (!items.length) {
     $("activity").innerHTML = empty("No recent activity", "Activity appears once scans or trades are recorded.");
     return;
   }
-  $("activity").innerHTML = items.map(item => `<div class="timeline-row"><div class="timeline-time">${safe(item.time)} UTC</div><div class="timeline-copy">${safe(item.copy)}</div></div>`).join("");
+  $("activity").innerHTML = items.map(item => {
+    const body = item.isTrade
+      ? `${assetChip(item.copy)} closed / ${item.pnl} USDC`
+      : safe(item.copy);
+    return `<div class="timeline-row"><div class="timeline-time">${safe(item.time)} UTC</div><div class="timeline-copy">${body}</div></div>`;
+  }).join("");
 }
 
 function renderTradeHistory(d) {
@@ -888,7 +902,7 @@ function renderTradeHistory(d) {
     $("trades").innerHTML = empty("No completed trades", "Closed trades will be listed here.");
     return;
   }
-  const rows = trades.map(t => `<tr><td>${safe((t.timestamp || "").slice(5, 16).replace("T", " "))}</td><td><span class="instrument">${safe(t.asset)}</span></td><td class="mobile-hide">${t.duration_hrs ? n(t.duration_hrs).toFixed(1) + " h" : "--"}</td><td class="mobile-hide">${money(t.size_usd)}</td><td class="positive mobile-hide">${sign(t.gross_pnl)}</td><td class="mobile-hide">${sign(-n(t.fees))}</td><td class="right ${tone(t.net_pnl)}">${sign(t.net_pnl)}</td></tr>`).join("");
+  const rows = trades.map(t => `<tr><td>${safe((t.timestamp || "").slice(5, 16).replace("T", " "))}</td><td>${assetChip(t.asset)}</td><td class="mobile-hide">${t.duration_hrs ? n(t.duration_hrs).toFixed(1) + " h" : "--"}</td><td class="mobile-hide">${money(t.size_usd)}</td><td class="positive mobile-hide">${sign(t.gross_pnl)}</td><td class="mobile-hide">${sign(-n(t.fees))}</td><td class="right ${tone(t.net_pnl)}">${sign(t.net_pnl)}</td></tr>`).join("");
   $("trades").innerHTML = `<table class="mobile-table"><thead><tr><th>Time UTC</th><th>Asset</th><th class="mobile-hide">Duration</th><th class="mobile-hide">Size</th><th class="mobile-hide">Funding</th><th class="mobile-hide">Fees</th><th class="right">Net PnL</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -912,7 +926,7 @@ function renderLogs(d) {
     const rHot = rPct >= 0.15;
     const rClass = s.top_rate_pct ? (rHot ? "positive" : "negative") : "";
     const rText  = s.top_rate_pct ? rPct.toFixed(4) + "%" : "--";
-    return `<tr><td>${safe((s.timestamp || "").slice(5, 16).replace("T", " "))}</td><td class="mobile-hide">${n(s.efficiency).toFixed(0)}%</td><td class="mobile-hide">${s.mins_to_fund != null ? safe(s.mins_to_fund) + " min" : "--"}</td><td>${s.top_asset ? safe(s.top_asset) : "--"}</td><td class="mobile-hide ${rClass}">${rText}</td><td class="right mobile-action">${safe(s.action || "--")}</td></tr>`;
+    return `<tr><td>${safe((s.timestamp || "").slice(5, 16).replace("T", " "))}</td><td class="mobile-hide">${n(s.efficiency).toFixed(0)}%</td><td class="mobile-hide">${s.mins_to_fund != null ? safe(s.mins_to_fund) + " min" : "--"}</td><td>${s.top_asset ? assetText(s.top_asset) : "--"}</td><td class="mobile-hide ${rClass}">${rText}</td><td class="right mobile-action">${safe(s.action || "--")}</td></tr>`;
   }).join("");
   $("scanlog").innerHTML = `<table class="mobile-table"><thead><tr><th>Time UTC</th><th class="mobile-hide">Efficiency</th><th class="mobile-hide">Funding In</th><th>Asset</th><th class="mobile-hide">Top Rate</th><th class="right">Action</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
