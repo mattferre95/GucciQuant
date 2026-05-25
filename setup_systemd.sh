@@ -26,12 +26,13 @@ Wants=network-online.target
 Type=simple
 User=root
 WorkingDirectory=${DIR}
-ExecStart=${PYTHON} main.py
+ExecStart=${PYTHON} -u main.py
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=gucci-bot
+Environment=PYTHONUNBUFFERED=1
 
 [Install]
 WantedBy=multi-user.target

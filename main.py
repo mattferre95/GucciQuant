@@ -263,8 +263,10 @@ def scan_and_trade():
             break  # one alert per scan max
 
     # ── Snapshot all current rates (powers 24hr rate chart in dashboard) ──
+    all_rates = []
     try:
-        log_rate_snapshot(get_all_rates())
+        all_rates = get_all_rates()
+        log_rate_snapshot(all_rates)
     except Exception:
         pass
 
@@ -272,9 +274,16 @@ def scan_and_trade():
     check_liquidation_risk()
 
     # ── Log this scan cycle to DB for dashboard activity feed ──
+    # Use qualifying opps first; fall back to best of ALL rates so the
+    # dashboard always shows the current best rate even below threshold.
     top_opp    = max(opps_map.values(), key=lambda o: o["rate"], default=None)
-    top_asset  = top_opp["asset"]   if top_opp else None
-    top_rate   = top_opp["rate"] * 100 if top_opp else 0.0
+    if top_opp is None and all_rates:
+        best_raw   = max(all_rates, key=lambda r: r["rate_pct"])
+        top_asset  = best_raw["asset"]
+        top_rate   = best_raw["rate_pct"]
+    else:
+        top_asset  = top_opp["asset"]   if top_opp else None
+        top_rate   = top_opp["rate"] * 100 if top_opp else 0.0
     n_opps     = len(opps_map)
     if active_positions:
         action = "HOLDING: " + ", ".join(active_positions.keys())
