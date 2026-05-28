@@ -30,7 +30,8 @@ from agents.risk_agent            import RiskAgent
 from agents.notifier              import (alert_startup, alert_entry, alert_exit,
                                            alert_error, alert_daily_summary,
                                            alert_risk_breach, start_command_listener,
-                                           alert_rate_spike, alert_weekly_report)
+                                           alert_rate_spike, alert_weekly_report,
+                                           alert_periodic_summary)
 from execution.hyperliquid_trader import enter_position, exit_position
 from utils.logger                 import (init_db, log_trade, log_signal,
                                            save_open_position, close_saved_position,
@@ -329,6 +330,24 @@ def fast_exit_check():
         pass
 
 
+def send_periodic_summary():
+    """Every 6 hours — lightweight pulse to Discord."""
+    try:
+        all_rates = get_all_rates()
+        top = max(all_rates, key=lambda r: r["rate_pct"], default=None)
+        top_rate_now = top["rate_pct"] if top else 0.0
+        alert_periodic_summary(
+            capital      = risk.capital,
+            daily_pnl    = risk.daily_pnl,
+            best_rate    = risk.best_rate_today,
+            positions    = list(active_positions.values()),
+            n_scans      = len(active_positions),   # scan count not tracked in mem; use proxy
+            top_rate_now = top_rate_now,
+        )
+    except Exception as e:
+        alert_error(f"Periodic summary failed: {e}")
+
+
 def send_weekly_report():
     """Every Monday 09:00 UTC — performance summary to Discord."""
     from utils.performance import get_metrics
@@ -340,6 +359,7 @@ def send_weekly_report():
 # Schedule
 schedule.every(15).minutes.do(scan_and_trade)
 schedule.every(5).minutes.do(fast_exit_check)
+schedule.every(6).hours.do(send_periodic_summary)
 schedule.every().monday.at("09:00").do(send_weekly_report)
 schedule.every().day.at("00:01").do(maybe_reset_daily)
 

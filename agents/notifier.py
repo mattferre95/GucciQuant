@@ -80,6 +80,18 @@ def alert_weekly_report(metrics: dict, capital: float):
           f"Annualised Return: `{metrics['annual_return_pct']:.1f}%`\n"
           f"Avg Hold: `{metrics['avg_hold_hrs']:.1f}hr`")
 
+def alert_periodic_summary(capital, daily_pnl, best_rate, positions, n_scans, top_rate_now):
+    """Sent every 6 hours — lightweight status pulse."""
+    pos_lines = "\n".join(
+        [f"  • `{p['asset']}` @ {p.get('rate', 0)*100:.3f}%/hr" for p in positions]
+    ) if positions else "  None"
+    market = f"`{top_rate_now:.4f}%/hr`" if top_rate_now else "`< threshold`"
+    _send(f"⏱ **6HR UPDATE**\n"
+          f"Capital: `${capital:.2f}` | Day PnL: `{daily_pnl:+.4f}`\n"
+          f"Best rate today: `{best_rate:.3f}%/hr` | Market now: {market}\n"
+          f"Open positions:\n{pos_lines}\n"
+          f"Scans this session: `{n_scans}`")
+
 def alert_daily_summary(capital, daily_pnl, n_trades, best_rate):
     e = "📈" if daily_pnl >= 0 else "📉"
     _send(f"{e} **DAILY SUMMARY**\n"
