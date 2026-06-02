@@ -729,7 +729,7 @@ HTML = """<!DOCTYPE html>
       <a class="nav-link" href="#positions"><span class="nav-mark"></span>Positions</a>
       <a class="nav-link" href="#opportunities"><span class="nav-mark"></span>Opportunities</a>
       <a class="nav-link" href="#performance"><span class="nav-mark"></span>Performance</a>
-      <a class="nav-link" href="#logs"><span class="nav-mark"></span>System Logs</a>
+      <a class="nav-link" href="#logs"><span class="nav-mark"></span>Signal Log</a>
     </nav>
     <div class="sidebar-state">
       <div class="state-line"><span class="feed-label"><span class="status-dot" id="sidebar-dot"></span><span class="feed-copy">System feed</span></span><span id="feed-state">ONLINE</span></div>
@@ -800,13 +800,6 @@ HTML = """<!DOCTYPE html>
             </div>
             <div class="table-wrap table-scroll" id="trades"></div>
           </section>
-          <section class="panel" id="logs">
-            <div class="panel-header">
-              <div><h2 class="panel-title">System Logs</h2><div class="panel-meta">Most recent scan cycle events</div></div>
-              <span class="panel-count">30 sec refresh</span>
-            </div>
-            <div class="table-wrap table-scroll" id="scanlog"></div>
-          </section>
         </div>
         <aside class="column">
           <section class="panel">
@@ -843,6 +836,13 @@ HTML = """<!DOCTYPE html>
           </section>
         </aside>
       </div>
+      <section class="panel" id="logs">
+        <div class="panel-header">
+          <div><h2 class="panel-title">Signal Log</h2><div class="panel-meta">5 min scans</div></div>
+          <span class="panel-count">96 latest</span>
+        </div>
+        <div class="table-wrap table-scroll" id="scanlog"></div>
+      </section>
       <footer class="footer">
         <span>GUCCI QUANT / Graphite Terminal</span>
         <span class="footer-links"><a href="#overview">Overview</a><a href="#positions">Positions</a><a href="#performance">Performance</a><a href="#logs">Logs</a></span>
