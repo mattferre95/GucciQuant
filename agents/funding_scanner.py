@@ -3,10 +3,16 @@ GUCCI QUANT — Funding Rate Scanner + Timing Awareness
 Hyperliquid pays funding at :00 every hour.
 Optimal entry window: :45-:59 (first payment within 15 min).
 """
-import requests, time as _time
+import os, requests, time as _time
 from datetime import datetime
+from dotenv import load_dotenv
+load_dotenv()
 
-BASE_URL   = "https://api.hyperliquid.xyz/info"
+_TESTNET = os.getenv("TESTNET", "false").lower() == "true"
+BASE_URL   = (
+    "https://api.hyperliquid-testnet.xyz/info" if _TESTNET
+    else "https://api.hyperliquid.xyz/info"
+)
 MIN_RATE   = 0.0015    # 0.15%/hr — above 0.11% fee threshold
 MIN_VOLUME = 1_000_000  # $1M daily volume (HL native tokens have lower vol than BTC/ETH)
 
