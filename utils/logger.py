@@ -63,7 +63,10 @@ CREATE TABLE IF NOT EXISTS positions (
     funding_rate REAL,
     spot_id      TEXT,
     paper        INTEGER DEFAULT 1,
-    status       TEXT DEFAULT 'open'
+    status       TEXT DEFAULT 'open',
+    direction    TEXT,
+    sl_price     REAL,
+    tp_price     REAL
 );"""
 
 
@@ -83,8 +86,10 @@ def init_db():
         c.executescript(SCHEMA)
         # Migrate existing DBs that predate the spot_id column
         cols = {r[1] for r in c.execute("PRAGMA table_info(positions)")}
-        if "spot_id" not in cols:
-            c.execute("ALTER TABLE positions ADD COLUMN spot_id TEXT")
+        for col, ctype in [("spot_id", "TEXT"), ("direction", "TEXT"),
+                           ("sl_price", "REAL"), ("tp_price", "REAL")]:
+            if col not in cols:
+                c.execute(f"ALTER TABLE positions ADD COLUMN {col} {ctype}")
     print(f"  🗄️  DB ready: {DB_PATH}")
 
 
@@ -144,12 +149,15 @@ def save_open_position(pos):
     with get_conn() as c:
         c.execute(
             """INSERT OR REPLACE INTO positions
-               (asset, entry_time, entry_price, size_usd, funding_rate, spot_id, paper, status)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               (asset, entry_time, entry_price, size_usd, funding_rate, spot_id,
+                paper, status, direction, sl_price, tp_price)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (pos["asset"], datetime.utcnow().isoformat(),
-             pos.get("entry_price", 0), pos.get("size_usd", 0),
+             pos.get("entry_price", 0),
+             pos.get("size_usd", pos.get("margin_usd", 0)),
              pos.get("rate", 0), pos.get("spot_id"),
-             1 if pos.get("paper", True) else 0, "open")
+             1 if pos.get("paper", True) else 0, "open",
+             pos.get("direction"), pos.get("sl_price"), pos.get("tp_price"))
         )
 
 

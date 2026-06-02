@@ -11,7 +11,8 @@ from agents.notifier              import (alert_startup, alert_error, alert_exit
                                            alert_daily_summary, start_command_listener)
 from execution.scalping_trader    import enter_position, exit_position, check_sl_tp
 from execution.hyperliquid_trader import get_mark_price, with_retry
-from utils.logger                 import init_db, log_trade
+from utils.logger                 import (init_db, log_trade, log_scan,
+                                           save_open_position, close_saved_position)
 from utils.performance            import print_report
 
 load_dotenv()
@@ -66,6 +67,7 @@ def _close(position: dict, price: float, reason: str):
     daily_trades += 1
     position["size_usd"] = position["margin_usd"]   # logger compatibility
     log_trade(position, net, exit_price=price, duration_hrs=duration_hrs)
+    close_saved_position(position["asset"])
     alert_exit(position["asset"], net, reason, position.get("paper", True))
     active_position = None
     print(f"  {'✅' if net > 0 else '❌'} {reason}: {net:+.4f} USDC | Capital: ${capital:.2f}")
@@ -114,6 +116,17 @@ def scan_and_trade():
     signal, ef, es, rsi = sig["signal"], sig["ema_fast"], sig["ema_slow"], sig["rsi"]
     print(f"  Signal: {signal:5s} | EMA9={ef}  EMA21={es}  RSI={rsi}  Price=${price:.2f}")
 
+    # Log scan to DB — powers dashboard signal history
+    try:
+        sig_code = 100 if signal == "LONG" else (0 if signal == "SHORT" else 50)
+        ema_diff = round((ef - es) / es * 100, 4) if ef and es and es != 0 else 0.0
+        log_scan(sig_code, int(rsi or 50), ASSET, ema_diff,
+                 1 if signal != "FLAT" else 0,
+                 1 if active_position else 0,
+                 f"{signal} | EMA9={ef} EMA21={es} RSI={rsi} ${price:.2f}")
+    except Exception:
+        pass
+
     # ── 4. Exit if signal reverses direction ──────────────────────
     if active_position:
         direction = active_position["direction"]
@@ -138,6 +151,7 @@ def scan_and_trade():
             return
         try:
             active_position = enter_position(ASSET, signal, margin)
+            save_open_position(active_position)
         except Exception as e:
             alert_error(f"Entry failed: {e}")
     else:
