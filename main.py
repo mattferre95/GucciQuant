@@ -41,6 +41,8 @@ from utils.performance            import print_report
 
 load_dotenv()
 
+TESTNET = os.getenv("TESTNET", "false").lower() == "true"
+
 risk                  = RiskAgent()
 active_positions      = {}
 _last_reset           = date.today()
@@ -141,6 +143,8 @@ def check_liquidation_risk():
                     # Force close if within 10%
                     if distance < 0.10 and asset in active_positions:
                         close_all(f"Liquidation protection — {asset} {distance*100:.1f}% from liq")
+    except Exception as e:
+        alert_error(f"Liquidation check failed: {e}")
 
 
 def scan_and_trade():
@@ -338,6 +342,10 @@ if __name__ == "__main__":
     print("  Funding Rate Arbitrage · Hyperliquid · Delta Neutral")
     mode = "📄 PAPER" if os.getenv("PAPER_MODE", "true") == "true" else "💰 LIVE"
     print(f"  Mode: {mode} | Capital: ${risk.capital:.2f} | Max positions: {risk.MAX_POSITIONS}")
+    if TESTNET:
+        print("  ⚠️  TESTNET MODE  — endpoint: api.hyperliquid-testnet.xyz")
+        print("  ⚠️               — max $20/leg · logs → testnet_trades table")
+        print("  ⚠️               — LIVE BOT UNAFFECTED")
     print("█"*50 + "\n")
 
     # Preflight — hard stop in live mode if any check fails

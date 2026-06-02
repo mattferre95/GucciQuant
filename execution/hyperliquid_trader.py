@@ -14,8 +14,13 @@ import os, time, requests
 from dotenv import load_dotenv
 load_dotenv()
 
-PAPER_MODE   = os.getenv("PAPER_MODE", "true").lower() == "true"
-BASE_URL     = "https://api.hyperliquid.xyz/info"
+PAPER_MODE        = os.getenv("PAPER_MODE", "true").lower() == "true"
+TESTNET           = os.getenv("TESTNET", "false").lower() == "true"
+TESTNET_MAX_SIZE  = 20.0   # hard cap per leg on testnet
+BASE_URL          = (
+    "https://api.hyperliquid-testnet.xyz/info" if TESTNET
+    else "https://api.hyperliquid.xyz/info"
+)
 MAX_RETRY    = 3
 FILL_TIMEOUT = 45  # seconds to wait for limit order fill
 
@@ -98,15 +103,16 @@ def _get_clients():
 
     acct         = eth_account.Account.from_key(os.getenv("HYPERLIQUID_PRIVATE_KEY"))
     main_address = os.getenv("HYPERLIQUID_WALLET_ADDRESS", "").strip()
-    info         = Info(constants.MAINNET_API_URL, skip_ws=True)
+    api_url      = constants.TESTNET_API_URL if TESTNET else constants.MAINNET_API_URL
+    info         = Info(api_url, skip_ws=True)
 
     if main_address and main_address.lower() != acct.address.lower():
-        # API / agent wallet: key signs, main account owns the funds
-        exch = Exchange(acct, constants.MAINNET_API_URL, account_address=main_address)
-        print(f"  🔑 API wallet mode: agent={acct.address[:10]}… main={main_address[:10]}…")
+        exch = Exchange(acct, api_url, account_address=main_address)
+        mode = "testnet" if TESTNET else "mainnet"
+        print(f"  🔑 API wallet ({mode}): agent={acct.address[:10]}… main={main_address[:10]}…")
         return info, exch, main_address
     else:
-        exch = Exchange(acct, constants.MAINNET_API_URL)
+        exch = Exchange(acct, api_url)
         return info, exch, acct.address
 
 
@@ -181,10 +187,14 @@ def _live_exit(position: dict) -> tuple:
 
 
 def enter_position(asset: str, size_usd: float, rate: float) -> dict:
+    if TESTNET and size_usd > TESTNET_MAX_SIZE:
+        print(f"  🧪 [TESTNET] Capping size ${size_usd:.2f} → ${TESTNET_MAX_SIZE:.2f}")
+        size_usd = TESTNET_MAX_SIZE
     price = with_retry(get_mark_price, asset)
     pos   = (_paper_enter(asset, size_usd, price)
              if PAPER_MODE else _live_enter(asset, size_usd, price))
-    pos["rate"] = rate
+    pos["rate"]    = rate
+    pos["testnet"] = TESTNET
     return pos
 
 

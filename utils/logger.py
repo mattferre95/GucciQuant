@@ -8,6 +8,7 @@ from datetime import datetime, date
 from contextlib import contextmanager
 
 DB_PATH = os.getenv("DB_PATH", "data/gucci_quant.db")
+TESTNET = os.getenv("TESTNET", "false").lower() == "true"
 os.makedirs("data", exist_ok=True)
 
 SCHEMA = """
@@ -64,6 +65,20 @@ CREATE TABLE IF NOT EXISTS positions (
     spot_id      TEXT,
     paper        INTEGER DEFAULT 1,
     status       TEXT DEFAULT 'open'
+);
+CREATE TABLE IF NOT EXISTS testnet_trades (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp    TEXT,
+    asset        TEXT,
+    entry_price  REAL,
+    exit_price   REAL,
+    size_usd     REAL,
+    funding_rate REAL,
+    gross_pnl    REAL,
+    fees         REAL,
+    net_pnl      REAL,
+    duration_hrs REAL,
+    paper        INTEGER DEFAULT 1
 );"""
 
 
@@ -116,10 +131,12 @@ def log_scan(efficiency, mins_to_fund, top_asset, top_rate_pct,
 
 
 def log_trade(pos, net_pnl, exit_price=0, duration_hrs=1):
-    fees = pos.get("size_usd", 0) * 2 * 0.0011
+    fees  = pos.get("size_usd", 0) * 2 * 0.0011
+    # Route to testnet_trades when running in testnet mode — never pollutes live table
+    table = "testnet_trades" if (TESTNET or pos.get("testnet")) else "trades"
     with get_conn() as c:
         c.execute(
-            "INSERT INTO trades VALUES (null,?,?,?,?,?,?,?,?,?,?,?)",
+            f"INSERT INTO {table} VALUES (null,?,?,?,?,?,?,?,?,?,?,?)",
             (datetime.utcnow().isoformat(), pos.get("asset"),
              pos.get("entry_price", 0), exit_price,
              pos.get("size_usd", 0), pos.get("rate", 0),
@@ -127,7 +144,8 @@ def log_trade(pos, net_pnl, exit_price=0, duration_hrs=1):
              round(net_pnl, 6), duration_hrs,
              1 if pos.get("paper", True) else 0)
         )
-    print(f"  📝 {pos.get('asset')} logged: {net_pnl:+.4f}")
+    tag = "[TESTNET]" if table == "testnet_trades" else ""
+    print(f"  📝 {tag} {pos.get('asset')} logged: {net_pnl:+.4f}")
 
 
 def log_signal(asset, rate, predicted, spread, action):
