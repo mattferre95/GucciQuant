@@ -144,6 +144,20 @@ def scan_and_trade():
         print(f"  ⏳ No signal — waiting")
 
 
+def fast_sl_tp_check():
+    """Runs every 1 minute — price fetch only, no candle math."""
+    if not active_position:
+        return
+    try:
+        price = with_retry(get_mark_price, ASSET)
+        hit, reason, exit_px = check_sl_tp(active_position, price)
+        if hit:
+            _close(active_position, exit_px, reason)
+    except Exception as e:
+        alert_error(f"Fast SL/TP check failed: {e}")
+
+
+schedule.every(1).minutes.do(fast_sl_tp_check)
 schedule.every(5).minutes.do(scan_and_trade)
 schedule.every().day.at("00:01").do(maybe_reset_daily)
 
