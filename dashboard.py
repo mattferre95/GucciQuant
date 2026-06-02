@@ -193,12 +193,126 @@ HTML = """<!DOCTYPE html>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#080810;--card:#0e0e18;--border:#1a1a2e;
-  --green:#00e676;--red:#ff1744;--text:#dde1f0;
-  --muted:#4a4a6a;--accent:#7c6fff;--yellow:#ffd740;
+  --bg:#07070f;--card:#0c0c1a;--border:rgba(255,255,255,0.06);
+  --green:#00e676;--red:#ff4060;--text:#e2e6f3;
+  --muted:#3a3a5a;--accent:#7c6fff;--yellow:#ffd740;
 }
 html,body{height:100%;overflow:hidden}
-body{background:var(--bg);color:var(--text);font-family:'SF Mono','Fira Code','Courier New',monospace;font-size:12px}
+
+/* Thin scrollbars */
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--muted);border-radius:2px}
+::-webkit-scrollbar-thumb:hover{background:#5a5a8a}
+*{scrollbar-width:thin;scrollbar-color:var(--muted) transparent}
+
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Inter','SF Pro Text',sans-serif;font-size:12px}
+
+/* Shell grid */
+.shell{display:grid;grid-template-columns:180px 1fr 258px;grid-template-rows:44px 1fr 32px;
+  grid-template-areas:"hdr hdr hdr""nav main aside""foot foot foot";height:100vh}
+
+/* Header */
+header{grid-area:hdr;display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;background:var(--card);border-bottom:1px solid var(--border)}
+.hdr-left{display:flex;flex-direction:column}
+.hdr-title{font-size:12px;font-weight:700;color:var(--text);letter-spacing:3px;font-family:'SF Mono','Fira Code',monospace}
+.hdr-title span{color:var(--accent)}
+.hdr-sub{font-size:8px;color:var(--muted);letter-spacing:2px;margin-top:2px;font-family:'SF Mono',monospace}
+.badge{padding:2px 8px;border-radius:4px;font-size:9px;font-weight:600;letter-spacing:1px;
+  background:rgba(0,230,118,0.08);color:var(--green);border:1px solid rgba(0,230,118,0.2);font-family:'SF Mono',monospace}
+.badge.live{background:rgba(255,64,96,0.08);color:var(--red);border-color:rgba(255,64,96,0.2)}
+.hdr-right{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:10px}
+.dot{width:5px;height:5px;border-radius:50%;background:var(--green);display:inline-block;
+  margin-right:5px;animation:blink 2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* Left nav */
+nav{grid-area:nav;background:var(--card);border-right:1px solid var(--border);
+  overflow-y:auto;display:flex;flex-direction:column}
+.brand{padding:13px 16px;border-bottom:1px solid var(--border)}
+.brand-name{font-size:12px;font-weight:700;color:var(--text);letter-spacing:3px;font-family:'SF Mono','Fira Code',monospace}
+.brand-name span{color:var(--accent)}
+.brand-sub{font-size:8px;color:var(--muted);letter-spacing:2px;margin-top:3px;font-family:'SF Mono',monospace}
+.nav-section{font-size:8px;color:var(--muted);letter-spacing:2.5px;padding:14px 16px 6px;text-transform:uppercase;font-weight:500}
+.nav-item{display:flex;align-items:center;gap:9px;padding:7px 16px;cursor:pointer;
+  color:var(--muted);font-size:11px;transition:color .15s,background .15s;
+  border-left:2px solid transparent}
+.nav-item:hover{color:var(--text);background:rgba(255,255,255,0.02)}
+.nav-item.active{color:var(--text);border-left-color:var(--accent);background:rgba(124,111,255,0.05)}
+.nav-icon{width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,0.15);flex-shrink:0}
+.nav-item.active .nav-icon{background:var(--accent)}
+.nav-item:hover .nav-icon{background:rgba(255,255,255,0.35)}
+
+/* Main */
+main{grid-area:main;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+
+/* Metric cards */
+.metrics{display:grid;grid-template-columns:repeat(6,1fr);gap:6px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:11px 13px}
+.card-label{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:5px;font-weight:500}
+.card-val{font-size:17px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;font-family:'SF Mono','Fira Code',monospace}
+.card-val.green{color:var(--green)}.card-val.red{color:var(--red)}.card-val.yellow{color:var(--yellow)}
+.card-sub{font-size:9px;color:var(--muted);margin-top:4px}
+
+/* Panels */
+.panel{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.panel-hdr{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:2px;
+  margin-bottom:10px;font-weight:500;display:flex;align-items:center;gap:8px}
+.panel-hdr::after{content:'';flex:1;height:1px;background:var(--border)}
+.panel-sub{font-size:8px;color:var(--muted);margin-left:4px}
+.two-col{display:grid;grid-template-columns:55% 1fr;gap:8px}
+
+/* Tables */
+table{width:100%;border-collapse:collapse}
+th{font-size:8px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:1.5px;
+  padding:0 10px 6px 0;text-align:left;border-bottom:1px solid var(--border)}
+th:first-child{padding-left:0}
+td{padding:6px 10px 6px 0;color:rgba(180,188,210,0.8);vertical-align:middle;font-size:11px;
+  border-bottom:1px solid rgba(255,255,255,0.025)}
+td:first-child{padding-left:0}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,0.018)}
+.scroll-table{overflow-y:auto;max-height:150px}
+
+/* Tags */
+.tag{padding:2px 7px;border-radius:4px;font-size:9px;font-weight:600;letter-spacing:0.5px;display:inline-block;font-family:'SF Mono',monospace}
+.tag.long {background:rgba(0,230,118,0.1);color:var(--green)}
+.tag.short{background:rgba(255,64,96,0.1);color:var(--red)}
+.tag.flat {background:rgba(255,255,255,0.05);color:var(--muted)}
+
+.pos{color:var(--green)!important}.neg{color:var(--red)!important}.dim{color:var(--muted)}
+.empty{text-align:center;padding:16px 0;color:var(--muted);font-size:11px;line-height:2}
+
+/* Open position */
+.pos-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px}
+.pos-cell{background:rgba(255,255,255,0.028);border-radius:6px;padding:8px 10px}
+.pos-cell-lbl{font-size:8px;color:var(--muted);letter-spacing:1.5px;margin-bottom:3px;text-transform:uppercase}
+.pos-cell-val{font-size:13px;font-weight:700;font-family:'SF Mono','Fira Code',monospace}
+
+/* Right sidebar */
+aside{grid-area:aside;background:var(--card);border-left:1px solid var(--border);
+  overflow-y:auto;display:flex;flex-direction:column}
+.aside-section{padding:14px 16px;border-bottom:1px solid var(--border)}
+.aside-section:last-child{border-bottom:none}
+.aside-title{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:10px;font-weight:500}
+.aside-row{display:flex;justify-content:space-between;align-items:center;
+  padding:5px 0;font-size:11px;border-bottom:1px solid rgba(255,255,255,0.025)}
+.aside-row:last-child{border-bottom:none}
+
+/* Footer */
+footer{grid-area:foot;display:flex;align-items:center;gap:18px;
+  padding:0 18px;background:var(--card);border-top:1px solid var(--border);font-size:9px;color:var(--muted)}
+.status-item{display:flex;align-items:center;gap:5px}
+.status-dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.status-dot.online{background:var(--green)}.status-dot.standby{background:var(--muted)}
+.footer-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+
+/* Refresh button */
+.btn{background:rgba(255,255,255,0.04);color:var(--muted);border:1px solid var(--border);
+  border-radius:5px;padding:3px 10px;cursor:pointer;font-size:9px;font-family:inherit;transition:color .15s,background .15s}
+.btn:hover{color:var(--text);background:rgba(255,255,255,0.07)}
+</style>
 
 /* ── Shell grid ── */
 .shell{
@@ -325,7 +439,7 @@ footer{
   <div class="hdr-right">
     <span><span class="dot"></span><span id="upd">Loading…</span></span>
     <span class="badge" id="badge">PAPER</span>
-    <button onclick="load()" style="background:var(--border);color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:3px 10px;cursor:pointer;font-size:10px;font-family:inherit">Refresh</button>
+    <button onclick="load()" class="btn">Refresh</button>
   </div>
 </header>
 
