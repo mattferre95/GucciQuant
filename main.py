@@ -173,7 +173,8 @@ def scan_and_trade():
         held_hrs  = (time.time() - pos["entry_time"]) / 3600
         notional  = pos["size_usd"] * 2
         fees_cost = notional * risk.FEE_RATE
-        gross_earn = notional * pos.get("rate", 0) * held_hrs
+        # Funding accrues on the perp leg only; fees hit both legs
+        gross_earn = pos["size_usd"] * pos.get("rate", 0) * held_hrs
         net_est    = gross_earn - fees_cost
         pct_covered = min(gross_earn / fees_cost * 100, 100) if fees_cost else 0
 

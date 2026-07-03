@@ -13,7 +13,7 @@ BASE_URL   = (
     "https://api.hyperliquid-testnet.xyz/info" if _TESTNET
     else "https://api.hyperliquid.xyz/info"
 )
-MIN_RATE   = 0.0015    # 0.15%/hr — above 0.11% fee threshold
+MIN_RATE   = float(os.getenv("MIN_RATE", "0.0015"))  # %/hr entry threshold (env-tunable)
 MIN_VOLUME = 1_000_000  # $1M daily volume (HL native tokens have lower vol than BTC/ETH)
 
 # Cache of assets that have BOTH spot and perp markets (the only tradeable set)

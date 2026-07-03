@@ -130,7 +130,9 @@ def _paper_enter(asset: str, size_usd: float, price: float) -> dict:
 def _paper_exit(position: dict) -> tuple:
     held  = (time.time() - position["entry_time"]) / 3600
     rate  = position.get("rate", 0.002)
-    gross = position["size_usd"] * 2 * rate * held
+    # Funding accrues on the perp leg's notional only — not both legs.
+    # Fees are paid on both legs (spot + perp round trip).
+    gross = position["size_usd"] * rate * held
     fees  = position["size_usd"] * 2 * 0.0011
     print(f"  📄 [PAPER] {position['asset']}: {held:.2f}hrs | "
           f"+${gross:.4f} funding | -${fees:.4f} fees | net: ${gross-fees:+.4f}")
@@ -182,7 +184,8 @@ def _live_exit(position: dict) -> tuple:
     print("  ✅ Spot sold")
     held  = (time.time() - position["entry_time"]) / 3600
     fees  = position["size_usd"] * 2 * 0.0011
-    gross = position["size_usd"] * 2 * position.get("rate", 0) * held
+    # Funding accrues on the perp leg's notional only
+    gross = position["size_usd"] * position.get("rate", 0) * held
     return gross, fees
 
 

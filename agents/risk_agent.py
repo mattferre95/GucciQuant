@@ -24,7 +24,11 @@ class RiskAgent:
         self.MAX_DAILY_LOSS  = -float(os.getenv("DAILY_LOSS_LIMIT", 5))
         self.MAX_DEPLOY_PCT  = float(os.getenv("MAX_CAPITAL_DEPLOYED", 80)) / 100
         self.MAX_POSITIONS   = int(os.getenv("MAX_POSITIONS", 3))
-        self.MIN_RATE        = 0.0015   # 0.15%/hr minimum
+        # Entry threshold — tunable via env. Break-even math (corrected):
+        #   funding earned = size × rate × hrs (perp leg only)
+        #   fees           = size × 2 × 0.11%  (both legs, round trip)
+        #   break-even hrs = 0.0022 / rate  →  0.0015 → 1.5hr, 0.0005 → 4.4hr
+        self.MIN_RATE        = float(os.getenv("MIN_RATE", 0.0015))
         self.MAX_SPREAD      = 0.0005   # 0.05% max spread
         self.MIN_PREDICTED   = 0.0005   # next period must be positive
         # Real fee breakdown for this account (from HL portfolio page):
@@ -120,7 +124,8 @@ class RiskAgent:
         held_hrs   = (time.time() - pos["entry_time"]) / 3600
         notional   = pos["size_usd"] * 2
         fees_cost  = notional * self.FEE_RATE
-        gross_earn = notional * pos.get("rate", 0) * held_hrs
+        # Funding accrues on the perp leg only (size_usd); fees hit both legs
+        gross_earn = pos["size_usd"] * pos.get("rate", 0) * held_hrs
         fees_covered = gross_earn >= fees_cost
 
         # Dynamic threshold: trail at 33% of entry rate, floor at 0.03%/hr

@@ -190,7 +190,8 @@ def simulate(
         # ── Funding payment + exit check for open position ─────────────────
         if asset in positions:
             pos = positions[asset]
-            pos["earned"] += rate * LEG_SIZE * 2
+            # Funding accrues on the perp leg's notional only
+            pos["earned"] += rate * LEG_SIZE
             pos["hrs"]    += 1
 
             thresh   = max(pos["entry_rate"] * EXIT_RATIO, EXIT_FLOOR)
