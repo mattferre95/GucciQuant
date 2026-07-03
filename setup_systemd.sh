@@ -8,7 +8,9 @@
 # ─────────────────────────────────────────────────────────────────────────────
 set -e
 
+# Use the venv python if one exists, otherwise system python3
 PYTHON="/root/GucciQuant/venv/bin/python3"
+[ -x "$PYTHON" ] || PYTHON="$(command -v python3)"
 DIR="/root/GucciQuant"
 
 echo ""
