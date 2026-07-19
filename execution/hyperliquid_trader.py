@@ -12,6 +12,7 @@ Bug 2 FIXED: Order fill verification
 """
 import os, time, requests
 from dotenv import load_dotenv
+from utils.constants import FEE_RATE, MIN_ORDER_USD
 load_dotenv()
 
 PAPER_MODE        = os.getenv("PAPER_MODE", "true").lower() == "true"
@@ -133,7 +134,7 @@ def _paper_exit(position: dict) -> tuple:
     # Funding accrues on the perp leg's notional only — not both legs.
     # Fees are paid on both legs (spot + perp round trip).
     gross = position["size_usd"] * rate * held
-    fees  = position["size_usd"] * 2 * 0.0011
+    fees  = position["size_usd"] * 2 * FEE_RATE
     print(f"  📄 [PAPER] {position['asset']}: {held:.2f}hrs | "
           f"+${gross:.4f} funding | -${fees:.4f} fees | net: ${gross-fees:+.4f}")
     return gross, fees
@@ -183,13 +184,19 @@ def _live_exit(position: dict) -> tuple:
                round(price * 0.999, 4), {"limit": {"tif": "Ioc"}})
     print("  ✅ Spot sold")
     held  = (time.time() - position["entry_time"]) / 3600
-    fees  = position["size_usd"] * 2 * 0.0011
+    fees  = position["size_usd"] * 2 * FEE_RATE
     # Funding accrues on the perp leg's notional only
     gross = position["size_usd"] * position.get("rate", 0) * held
     return gross, fees
 
 
 def enter_position(asset: str, size_usd: float, rate: float) -> dict:
+    if size_usd < MIN_ORDER_USD:
+        # Hyperliquid rejects sub-$10 orders. On a delta-neutral pair a
+        # rejected leg means unintended directional exposure — refuse upfront.
+        raise ValueError(
+            f"Order ${size_usd:.2f} below exchange minimum ${MIN_ORDER_USD:.2f}"
+        )
     if TESTNET and size_usd > TESTNET_MAX_SIZE:
         print(f"  🧪 [TESTNET] Capping size ${size_usd:.2f} → ${TESTNET_MAX_SIZE:.2f}")
         size_usd = TESTNET_MAX_SIZE

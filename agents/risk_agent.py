@@ -31,11 +31,12 @@ class RiskAgent:
         self.MIN_RATE        = float(os.getenv("MIN_RATE", 0.0015))
         self.MAX_SPREAD      = 0.0005   # 0.05% max spread
         self.MIN_PREDICTED   = 0.0005   # next period must be positive
-        # Real fee breakdown for this account (from HL portfolio page):
-        #   Perp entry (ALO maker 0.015%) + Perp exit (taker 0.045%) = 0.060% perp leg
-        #   Spot entry (maker ~0.040%)    + Spot exit (taker ~0.100%) = 0.140% spot leg
-        #   Total on $10/leg ($20 notional): ($0.006 + $0.014) / $20 = 0.100%
-        self.FEE_RATE        = 0.0010   # 0.10% round-trip (verified against actual fee tier)
+        # Shared constant — see utils/constants.py for the fee breakdown.
+        # Was 0.0010 here while logging used 0.0011: the risk gate evaluated
+        # trades against cheaper fees than P&L recorded. Now unified.
+        from utils.constants import FEE_RATE, MIN_ORDER_USD
+        self.FEE_RATE        = FEE_RATE
+        self.MIN_ORDER_USD   = MIN_ORDER_USD
         self.KELLY_FRACTION  = 0.5      # half-Kelly for safety
         self.MIN_HOLD_HRS    = 1.0      # must hold 1 full funding period before rate-based exit
 

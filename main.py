@@ -240,8 +240,10 @@ def scan_and_trade():
             continue
 
         size = risk.position_size(rate)
-        if size < 5:
-            print(f"  ⏭  {asset}: Kelly size too small (${size:.2f}) — skipping")
+        if size < risk.MIN_ORDER_USD:
+            # Below Hyperliquid's $10 order minimum — a rejected leg on a
+            # delta-neutral pair means unintended directional exposure
+            print(f"  ⏭  {asset}: size ${size:.2f} below ${risk.MIN_ORDER_USD:.2f} exchange minimum — skipping")
             continue
 
         print(f"\n  🟢 ENTERING {asset}")

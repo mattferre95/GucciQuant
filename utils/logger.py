@@ -131,7 +131,8 @@ def log_scan(efficiency, mins_to_fund, top_asset, top_rate_pct,
 
 
 def log_trade(pos, net_pnl, exit_price=0, duration_hrs=1):
-    fees  = pos.get("size_usd", 0) * 2 * 0.0011
+    from utils.constants import FEE_RATE
+    fees  = pos.get("size_usd", 0) * 2 * FEE_RATE
     # Route to testnet_trades when running in testnet mode — never pollutes live table
     table = "testnet_trades" if (TESTNET or pos.get("testnet")) else "trades"
     with get_conn() as c:

@@ -21,7 +21,7 @@ BASE_URL = "https://api.hyperliquid.xyz/info"
 # ── Strategy constants (mirror production) ────────────────────────────────────
 DAYS          = 90
 MIN_RATE      = 0.0015   # 0.15 %/hr — minimum qualifying rate
-FEE_RATE      = 0.0011   # 0.11 % round-trip (verified against actual fee tier)
+from utils.constants import FEE_RATE  # single source of truth (0.11% round trip)
 EXIT_RATIO    = 0.33     # exit when rate falls to 33 % of entry rate
 EXIT_FLOOR    = 0.0003   # 0.03 %/hr hard floor on exit threshold
 MIN_HOLD_HRS  = 1        # hold at least 1 full funding period
