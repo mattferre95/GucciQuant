@@ -50,6 +50,12 @@ _exit_times: dict     = {}          # {asset: unix_timestamp} — re-entry coold
 REENTRY_COOLDOWN_SECS = 1800        # 30 min cooldown after exit
 SPIKE_RATE_THRESHOLD  = 0.003       # 0.30%/hr — alert even when already positioned
 
+# Regime tripwire: Discord ping when any asset's funding crosses this %/hr,
+# even while below the entry bar. Signals the cold regime may be ending.
+REGIME_ALERT_PCT      = float(os.getenv("REGIME_ALERT_PCT", "0.03"))  # %/hr
+REGIME_COOLDOWN_SECS  = 6 * 3600    # max one alert per asset per 6h
+_regime_alerted: dict = {}          # {asset: last_alert_unix}
+
 
 def recover_positions():
     """On startup: close any positions left open from a previous crash."""
@@ -265,9 +271,21 @@ def scan_and_trade():
             alert_rate_spike(opp["asset"], opp["rate"] * 100, opp["annual_pct"])
             break  # one alert per scan max
 
-    # ── Snapshot all current rates (powers 24hr rate chart in dashboard) ──
+    # ── Snapshot all rates + regime tripwire ──────────────────────────────
+    # Regime alert fires on ANY tradeable asset (no volume/threshold filter)
+    # crossing REGIME_ALERT_PCT — an early "market waking up" signal that
+    # fires below the entry bar. Per-asset cooldown prevents spam.
     try:
-        log_rate_snapshot(get_all_rates())
+        rates_all = get_all_rates()
+        log_rate_snapshot(rates_all)
+        now = time.time()
+        for r in rates_all:
+            if r["rate_pct"] >= REGIME_ALERT_PCT:
+                if now - _regime_alerted.get(r["asset"], 0) > REGIME_COOLDOWN_SECS:
+                    _regime_alerted[r["asset"]] = now
+                    alert_rate_spike(r["asset"], r["rate_pct"], r["annual_pct"])
+                    print(f"  🌡️  REGIME ALERT: {r['asset']} funding at "
+                          f"{r['rate_pct']:.4f}%/hr — market warming up")
     except Exception:
         pass
 
