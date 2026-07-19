@@ -205,4 +205,104 @@ cd ~/GucciQuant && python3 backtest.py
 
 ---
 
+## 9 · Full technical specification (for a trader's review)
+
+Everything a professional needs to evaluate the strategy. All numbers are from the code as deployed, not aspirational.
+
+### Structure
+
+| Item | Spec |
+|---|---|
+| Venue | Hyperliquid (perps + native spot), funding paid hourly at :00 UTC |
+| Position | Short perp + long spot, equal notional per leg, no leverage |
+| Universe | Assets with BOTH a Hyperliquid native spot market and a perp — currently 10: ANIME, AZTEC, BERA, HYPE, MON, PUMP, PURR, STABLE, TRUMP, WLFI |
+| Funding accrual | Perp leg's notional only (spot leg earns nothing) |
+| Scan cadence | Full scan every 15 min; exit-only fast check every 5 min |
+
+### Entry conditions (ALL must pass)
+
+| Condition | Value | Notes |
+|---|---|---|
+| Funding rate | ≥ 0.05%/hr (0.0005) | Env-tunable `MIN_RATE`; code default 0.15%/hr |
+| 24h volume | ≥ $1,000,000 | Filters illiquid names |
+| Bid–ask spread | ≤ 0.05% (0.0005) | From live L2 book |
+| Predicted next-hour rate | ≥ 0.05%/hr | Hyperliquid's own forecast |
+| 4h rate trend | not "falling" | Classifier: last 4 hourly rates, early-half avg vs late-half avg, falling if −15% or worse |
+| Concurrent positions | < 3 | |
+| Re-entry cooldown | 30 min per asset | Prevents fee-churn oscillation |
+| Timing window | :45–:59 preferred for rates < 0.30%/hr | First funding payment lands within 15 min of entry |
+
+### Position sizing
+
+Half-Kelly with overlays. Per-leg USD size =
+
+```
+edge        = rate − 0.0010            (fee-adjusted edge)
+full_kelly  = edge / rate
+size        = capital × min(half_kelly, 80%) / 3
+            × tier_multiplier × drawdown_factor
+```
+
+| Overlay | Values |
+|---|---|
+| Tier multiplier | ≥0.50%/hr → 1.5× · 0.30–0.50 → 1.25× · 0.20–0.30 → 1.0× · below → 0.75× |
+| Drawdown factor | day ≥ −$1 → 1.0× · to half the daily limit → 0.75× · beyond → 0.5× |
+| Floor / min trade | $5 per leg minimum |
+
+### Fees & break-even (verified against the account's actual fee tier)
+
+| Leg | Entry | Exit |
+|---|---|---|
+| Perp | ALO maker 0.015% | market/taker 0.045% |
+| Spot | maker ~0.040% | IOC/taker ~0.100% |
+
+Round trip ≈ **0.22% of one leg's notional** (0.11% of combined). Since funding accrues on the perp leg only:
+
+```
+break-even hold (hours) = 0.0022 / hourly_rate
+  0.15%/hr → 1.5h     0.05%/hr → 4.4h     0.0013%/hr → ~169h (why the bot won't trade today)
+```
+
+### Exit logic (priority order)
+
+1. Rate < 0 → exit immediately (we'd be paying).
+2. Rate < trail threshold AND fees covered → take profit.
+3. Rate < trail threshold AND held ≥ 1h → cut.
+4. Otherwise hold. Trail threshold = max(33% of entry rate, 0.03%/hr).
+
+### Execution mechanics (live mode)
+
+- Entries: ALO (post-only) limit orders — perp short at mark × 0.9998, spot long at mark × 1.0002; 45s fill verification by polling open orders; unfilled → cancel.
+- **Single-leg protection:** if the spot leg fails after the perp fills, the perp is market-closed immediately. No naked exposure possible.
+- Exits: perp market-close + spot IOC sell.
+- Retries: 3× exponential backoff on all API calls.
+
+### Risk rails
+
+- Daily loss limit −$5 → close all positions, halt trading until next day.
+- Liquidation monitor: alert at <20% distance, force-close at <10% (delta-neutral, unlevered, so buffers are naturally wide).
+- Crash recovery: open positions persist in SQLite; on restart the bot restores exact entry times and manages/exits them.
+- Max 80% of capital deployed; max 3 positions; separate DBs for paper/live.
+
+### Empirical record (honest, includes the negative result)
+
+| Test | Result |
+|---|---|
+| Synthetic backtest (90d, OU-process regime model calibrated to *hot-market* rates ~0.2%/hr avg) | Sharpe 58.4, win rate 87.1%, strategy beat no-filter baseline by +7.6 Sharpe — validates the *logic*, not the current market |
+| Live-data practice run, Jul 3–19 2026 (16 days, ~1,500 scans, threshold 0.05%/hr) | **0 entries** — no scan found a qualifying opportunity |
+| Real 90-day funding history, all 10 assets (21,600 asset-hours, tested at 0.15%/hr) | **0 hours above threshold** |
+| Observed rate levels (48h window, Jul 19) | max 0.0066%/hr (PURR); typical 0.0013%/hr (HL baseline); STABLE avg −0.0053%/hr |
+
+Interpretation: the strategy's edge exists only when funding spikes (new listings, hype cycles, bull frenzies pushing 0.1–0.5%/hr). The current regime pays ~1/170th of round-trip cost per hour. The bot correctly refuses to trade; a 0.03%/hr regime tripwire alerts the operator when conditions change.
+
+### Known limitations & open questions (for the reviewer)
+
+- **Universe is small** (10 names, HL native spot only — no BTC/ETH spot on HL), and mostly low-cap; capacity is limited by the $1M volume floor and thin spot books.
+- **Hourly-resolution backtest** can't model intra-hour rate decay, queue position on ALO fills, or partial fills.
+- The synthetic backtest's regime model was calibrated optimistically; treat its Sharpe as an upper bound on strategy logic quality, not an expected return.
+- Paper fills assume perfect maker execution; live results will be worse by slippage + missed fills.
+- Possible extensions worth a trader's opinion: cross-exchange funding capture (hedge leg elsewhere, larger universe), negative-funding capture (long perp side when shorts pay), and whether 0.05%/hr is the right bar given observed regime distributions.
+
+---
+
 *GucciQuant v1.3 · funding-fee collection on Hyperliquid · practice run July 3–19, 2026: perfect uptime, zero trades, gate not cleared — live trading waits for the tripwire. The gate in section 4 is the contract: no real money until the scorecard clears it.*
